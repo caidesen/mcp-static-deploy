@@ -38,6 +38,38 @@ SETUP_TOKEN=dev-setup-token \
 | `DATA_DIR` | `data` | SQLite file `app.db` and site files `sites/{slug}/` |
 | `SETUP_TOKEN` | generated and logged once if unset | Required to create the first account |
 
+## Container image
+
+The published image is `ghcr.io/caidesen/mcp-static-deploy`. [`.github/workflows/publish-image.yml`](.github/workflows/publish-image.yml) builds it with `docker/build-push-action` and pushes to GitHub Container Registry using `GITHUB_TOKEN` (`packages: write`). It runs on a push to `main` and on version tags (`v*`). Pull requests do not publish.
+
+A push to `main` is tagged `latest` and with the short commit sha. A version tag such as `v1.2.3` is also published as `v1.2.3`, `1.2.3`, `1.2`, and `1`, plus the short sha. Version tags do not move `latest`.
+
+The Dockerfile is multi-stage. The build stage uses `golang:1.26.10-bookworm` and compiles with `CGO_ENABLED=0`. The final stage is distroless static and runs only that binary, as uid 65532 (`nonroot`).
+
+```sh
+docker build -t mcp-static-deploy .
+docker run --rm -p 8080:8080 \
+  -e BASE_URL=http://localhost:8080 \
+  -e BASE_DOMAIN=localhost \
+  -e SETUP_TOKEN=dev-setup-token \
+  -v mcp-static-data:/data \
+  mcp-static-deploy
+```
+
+Pull the published image with `docker pull ghcr.io/caidesen/mcp-static-deploy:latest`.
+
+| Variable | Image default | Role |
+| --- | --- | --- |
+| `ADDR` | `:8080` | Listen address. The image exposes port 8080. |
+| `BASE_URL` | `http://localhost:8080` | Apex URL. `http` leaves the session cookie non-Secure. |
+| `BASE_DOMAIN` | none | Required. The image does not set this. Public sites are served on `{slug}.{BASE_DOMAIN}`. The process refuses to start if it is empty. |
+| `DATA_DIR` | `/data` | SQLite file `app.db` and site files `sites/{slug}/`. Mount a volume here. This replaces the binary's relative default `data`. |
+| `SETUP_TOKEN` | unset | If unset, the process generates a setup token and logs it once. |
+
+A Docker named volume is created writable by uid 65532. A bind-mounted host directory must already be writable by that user.
+
+This image does not configure DNS or TLS. The wildcard DNS assumption stays outside this change: point `*.BASE_DOMAIN` at the process yourself.
+
 Open `BASE_URL`. While no account exists, the page asks for email, a password of at least 12 characters, and the setup token. That calls `POST /auth/email-password/signup` with `X-Setup-Token`. After the first account exists, signup is closed and the same page is email/password sign-in.
 
 The same routes are also mounted directly, matching the theauth Echo example (chi subrouter, then `echo.WrapHandler`, paths under `/auth/`):
