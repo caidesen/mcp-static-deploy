@@ -1,9 +1,9 @@
 {{define "layout"}}<!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · static publish</title>
+<title>{{if eq .View "site"}}{{.Site.Slug}}{{else if eq .View "admin"}}{{.T "sites"}}{{else if .NeedsSetup}}{{.T "create_account"}}{{else}}{{.T "sign_in"}}{{end}} · {{.T "brand"}}</title>
 <script src="/static/htmx.min.js"></script>
 <style>
 :root { color-scheme: light; }
@@ -18,6 +18,11 @@ header, main { width: min(42rem, calc(100% - 2rem)); margin: 0 auto; }
 header { display: flex; justify-content: space-between; align-items: baseline; padding: 1.25rem 0 0.5rem; }
 header a { color: inherit; text-decoration: none; font-weight: 650; }
 header form { margin: 0; }
+header .end { display: flex; align-items: baseline; gap: 0.85rem; }
+header .end button { margin-top: 0; }
+header .lang-switch { display: inline-flex; align-items: baseline; gap: 0.3rem; font-size: 0.92rem; font-weight: 450; }
+header .lang-switch a { color: #57534e; font-weight: 450; }
+header .lang-switch a[aria-current="true"] { color: inherit; font-weight: 650; }
 main { padding-bottom: 3rem; }
 h1 { font-size: 1.6rem; line-height: 1.2; margin: 0.4rem 0 0.8rem; }
 h2 { font-size: 1.05rem; margin: 1.6rem 0 0.5rem; }
@@ -63,10 +68,17 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
 </head>
 <body>
 <header>
-  <a href="/admin">Static publish</a>
-  {{if .Email}}
-  <form method="post" action="/logout"><button class="quiet" type="submit">Sign out</button></form>
-  {{end}}
+  <a href="/admin">{{.T "brand"}}</a>
+  <div class="end">
+    <nav class="lang-switch" aria-label="{{.T "language"}}">
+      <a href="/lang?set=zh"{{if eq .Lang "zh"}} aria-current="true"{{end}}>中</a>
+      <span aria-hidden="true">/</span>
+      <a href="/lang?set=en"{{if eq .Lang "en"}} aria-current="true"{{end}}>EN</a>
+    </nav>
+    {{if .Email}}
+    <form method="post" action="/logout"><button class="quiet" type="submit">{{.T "sign_out"}}</button></form>
+    {{end}}
+  </div>
 </header>
 <main>
 {{if eq .View "login"}}{{template "login" .}}{{end}}
@@ -78,63 +90,63 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
 {{end}}
 
 {{define "login"}}
-<h1>{{.Title}}</h1>
-{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+<h1>{{if .NeedsSetup}}{{.T "create_account"}}{{else}}{{.T "sign_in"}}{{end}}</h1>
+{{if .Error}}<p class="error" role="alert">{{.T .Error}}</p>{{end}}
 {{if .NeedsSetup}}
-<p class="muted">The first account is created with the setup token from <code>SETUP_TOKEN</code>. Password must be at least 12 characters. Later sign-ins use email and password. Magic-link and password-reset email is not delivered.</p>
+<p class="muted">{{.T "setup_before"}} <code>SETUP_TOKEN</code>{{.T "setup_after"}}</p>
 <form class="card" method="post" action="/signup">
-  <label for="email">Email</label>
+  <label for="email">{{.T "email"}}</label>
   <input id="email" name="email" type="email" autocomplete="username" required>
-  <label for="password">Password</label>
+  <label for="password">{{.T "password"}}</label>
   <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
-  <label for="setup_token">Setup token</label>
+  <label for="setup_token">{{.T "setup_token"}}</label>
   <input id="setup_token" name="setup_token" type="password" autocomplete="off" required>
-  <button type="submit">Create account</button>
+  <button type="submit">{{.T "create_account_btn"}}</button>
 </form>
 {{else}}
-<p class="muted">Sign in with email and password. Magic-link email is not sent.</p>
+<p class="muted">{{.T "sign_in_lead"}}</p>
 <form class="card" method="post" action="/login">
-  <label for="email">Email</label>
+  <label for="email">{{.T "email"}}</label>
   <input id="email" name="email" type="email" autocomplete="username" required>
-  <label for="password">Password</label>
+  <label for="password">{{.T "password"}}</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required>
-  <button type="submit">Sign in</button>
+  <button type="submit">{{.T "sign_in"}}</button>
 </form>
 {{end}}
 {{end}}
 
 {{define "admin"}}
-<h1>Sites</h1>
-<p class="muted">Signed in as {{.Email}}. Creating a site gives it a public URL on its own subdomain.</p>
-{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+<h1>{{.T "sites"}}</h1>
+<p class="muted">{{.T "signed_in_as"}} {{.Email}}. {{.T "site_hint"}}</p>
+{{if .Error}}<p class="error" role="alert">{{.T .Error}}</p>{{end}}
 <form method="post" action="/admin/sites" hx-post="/admin/sites" hx-target="#sites" hx-swap="outerHTML">
-  <button type="submit">Create site</button>
+  <button type="submit">{{.T "create_site"}}</button>
 </form>
 {{template "site-list" .}}
 
-<h2>API token for MCP</h2>
-<p class="muted">Agents call <code>{{.MCPURL}}</code> with <code>Authorization: Bearer</code> and the token below. A browser session cookie is also accepted. The token can publish with the <code>publish</code> ability and expires in 90 days. The secret is shown once.</p>
+<h2>{{.T "api_token_heading"}}</h2>
+<p class="muted">{{.T "mcp_before"}} <code>{{.MCPURL}}</code> {{.T "mcp_after_url"}} <code>Authorization: Bearer</code> {{.T "mcp_after_auth"}} <code>publish</code> {{.T "mcp_after_ability"}}</p>
 {{if .NewToken}}
 <div class="card">
-  <p>Copy this token now. It will not be shown again.</p>
+  <p>{{.T "copy_token"}}</p>
   <input id="new-token" class="secret" readonly value="{{.NewToken}}">
 </div>
 {{end}}
 <form class="card" method="post" action="/admin/tokens">
-  <label for="token-name">Token name</label>
+  <label for="token-name">{{.T "token_name"}}</label>
   <input id="token-name" name="name" type="text" value="agent" maxlength="120" required>
-  <button type="submit">Create API token</button>
+  <button type="submit">{{.T "create_token"}}</button>
 </form>
 {{if .Tokens}}
 <ul class="files">
 {{range .Tokens}}
-<li><span>{{.Name}} <span class="muted">{{.Hint}} · until {{.Expires}}</span></span></li>
+<li><span>{{.Name}} <span class="muted">{{.Hint}} · {{$.T "until"}} {{.Expires}}</span></span></li>
 {{end}}
 </ul>
 {{end}}
 
-<h2>Tools</h2>
-<p class="muted"><code>create_site</code>, <code>put_file</code>, <code>delete_file</code>, <code>list_files</code>. Anonymous calls are rejected.</p>
+<h2>{{.T "tools_heading"}}</h2>
+<p class="muted"><code>create_site</code>, <code>put_file</code>, <code>delete_file</code>, <code>list_files</code>. {{.T "anon_rejected"}}</p>
 {{end}}
 
 {{define "site-list"}}
@@ -149,25 +161,25 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
 {{end}}
 </ul>
 {{else}}
-<p class="muted">No sites yet.</p>
+<p class="muted">{{.T "no_sites"}}</p>
 {{end}}
 </div>
 {{end}}
 
 {{define "site"}}
-<p><a href="/admin">All sites</a></p>
+<p><a href="/admin">{{.T "all_sites"}}</a></p>
 <h1>{{.Site.Slug}}</h1>
-<p>Public URL<br><a class="url" href="{{.Site.URL}}">{{.Site.URL}}</a></p>
-<p class="muted">Local check, without DNS:</p>
+<p>{{.T "public_url"}}<br><a class="url" href="{{.Site.URL}}">{{.Site.URL}}</a></p>
+<p class="muted">{{.T "local_check"}}</p>
 <p><code>{{.Curl}}</code></p>
-{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{if .Error}}<p class="error" role="alert">{{.T .Error}}</p>{{end}}
 <form class="card" method="post" action="/admin/sites/{{.Site.Slug}}/files" enctype="multipart/form-data"
       hx-post="/admin/sites/{{.Site.Slug}}/files" hx-encoding="multipart/form-data" hx-target="#files" hx-swap="outerHTML">
-  <label for="file">File</label>
+  <label for="file">{{.T "file"}}</label>
   <input id="file" name="file" type="file" required>
-  <label for="path">Path (optional, defaults to the file name)</label>
+  <label for="path">{{.T "path_label"}}</label>
   <input id="path" name="path" type="text" placeholder="index.html" autocomplete="off">
-  <button type="submit">Upload</button>
+  <button type="submit">{{.T "upload"}}</button>
 </form>
 {{template "file-list" .}}
 {{end}}
@@ -178,17 +190,17 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
 <ul class="files">
 {{range .Files}}
 <li>
-  <span><code>{{.Path}}</code> <span class="muted">{{.Size}} bytes</span></span>
+  <span><code>{{.Path}}</code> <span class="muted">{{.Size}} {{$.T "bytes"}}</span></span>
   <form method="post" action="/admin/sites/{{$.Site.Slug}}/files/delete"
         hx-post="/admin/sites/{{$.Site.Slug}}/files/delete" hx-target="#files" hx-swap="outerHTML">
     <input type="hidden" name="path" value="{{.Path}}">
-    <button class="danger" type="submit">Delete</button>
+    <button class="danger" type="submit">{{$.T "delete"}}</button>
   </form>
 </li>
 {{end}}
 </ul>
 {{else}}
-<p class="muted">No files yet. Upload <code>index.html</code> to give the site a front page.</p>
+<p class="muted">{{.T "no_files_before"}} <code>index.html</code> {{.T "no_files_after"}}</p>
 {{end}}
 </div>
 {{end}}

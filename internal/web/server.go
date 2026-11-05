@@ -133,6 +133,7 @@ func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, err
 	e.Use(echo.WrapMiddleware(app.Auth.Authn()))
 
 	e.GET("/", s.home)
+	e.GET("/lang", s.setLang)
 	e.POST("/signup", s.signup)
 	e.POST("/login", s.login)
 	e.POST("/logout", s.logout)
@@ -168,7 +169,7 @@ func (h *appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if rec := recover(); rec != nil {
 			slog.Error("panic", "err", rec)
 			if !headerWritten(w) {
-				http.Error(w, "internal error", http.StatusInternalServerError)
+				http.Error(w, text(negotiateLang(r), "err_internal"), http.StatusInternalServerError)
 			}
 		}
 	}()
@@ -208,16 +209,26 @@ func (s *server) home(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	title := "Sign in"
-	if needs {
-		title = "Create the first account"
-	}
 	return s.render(c, http.StatusOK, "layout", viewData{
-		Title:      title,
 		View:       "login",
 		NeedsSetup: needs,
 		BaseURL:    s.cfg.BaseURL,
 	})
+}
+
+func (s *server) setLang(c echo.Context) error {
+	if lang, ok := knownLang(c.QueryParam("set")); ok {
+		c.SetCookie(&http.Cookie{
+			Name:     langCookie,
+			Value:    lang,
+			Path:     "/",
+			MaxAge:   60 * 60 * 24 * 365,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   c.Request().TLS != nil,
+		})
+	}
+	return c.Redirect(http.StatusSeeOther, langRedirect(c.Request()))
 }
 
 func (s *server) signup(c echo.Context) error {
@@ -271,15 +282,10 @@ func (s *server) finishAuth(c echo.Context, rec *httptest.ResponseRecorder, setu
 			return err
 		}
 	}
-	title := "Sign in"
-	if needs {
-		title = "Create the first account"
-	}
 	return s.render(c, rec.Code, "layout", viewData{
-		Title:      title,
 		View:       "login",
 		NeedsSetup: needs,
-		Error:      authError(rec.Body.Bytes()),
+		Error:      authErrorKey(rec.Body.Bytes()),
 		BaseURL:    s.cfg.BaseURL,
 	})
 }
@@ -325,13 +331,13 @@ func (s *server) sitePage(c echo.Context) error {
 
 func (s *server) upload(c echo.Context) error {
 	if err := limitBody(c, sites.MaxFileBytes+(1<<20)); err != nil {
-		return s.siteError(c, c.Param("slug"), "upload is too large")
+		return s.siteError(c, c.Param("slug"), "err_upload_too_large")
 	}
 	user, _ := theauth.UserFromContext(c.Request().Context())
 	slug := c.Param("slug")
 	fh, err := c.FormFile("file")
 	if err != nil {
-		return s.siteError(c, slug, "choose a file")
+		return s.siteError(c, slug, "err_choose_file")
 	}
 	rel := strings.TrimSpace(c.FormValue("path"))
 	if rel == "" {
@@ -343,7 +349,7 @@ func (s *server) upload(c echo.Context) error {
 	}
 	defer f.Close()
 	if err := s.sites.PutFile(c.Request().Context(), user.ID.String(), slug, rel, f); err != nil {
-		return s.siteError(c, slug, fileErr(err))
+		return s.siteError(c, slug, fileErrKey(err))
 	}
 	if fragment(c) {
 		data, err := s.siteData(c, slug)
@@ -359,7 +365,7 @@ func (s *server) deleteFile(c echo.Context) error {
 	user, _ := theauth.UserFromContext(c.Request().Context())
 	slug := c.Param("slug")
 	if err := s.sites.DeleteFile(c.Request().Context(), user.ID.String(), slug, c.FormValue("path")); err != nil {
-		return s.siteError(c, slug, fileErr(err))
+		return s.siteError(c, slug, fileErrKey(err))
 	}
 	if fragment(c) {
 		data, err := s.siteData(c, slug)
@@ -389,19 +395,19 @@ func (s *server) createToken(c echo.Context) error {
 		if derr != nil {
 			return derr
 		}
-		data.Error = err.Error()
+		data.Error = "err_token"
 		return s.render(c, http.StatusBadRequest, "layout", data)
 	}
 	id := s.flashes.put(user.ID.String(), secret)
 	return c.Redirect(http.StatusSeeOther, "/admin?issued="+id)
 }
 
-func (s *server) siteError(c echo.Context, slug, msg string) error {
+func (s *server) siteError(c echo.Context, slug, key string) error {
 	data, err := s.siteData(c, slug)
 	if err != nil {
-		return c.String(http.StatusBadRequest, msg)
+		return c.String(http.StatusBadRequest, text(negotiateLang(c.Request()), key))
 	}
-	data.Error = msg
+	data.Error = key
 	if fragment(c) {
 		return s.render(c, http.StatusUnprocessableEntity, "file-list", data)
 	}
@@ -442,7 +448,6 @@ func (s *server) adminData(c echo.Context) (viewData, error) {
 		tokenRows = []tokenRow{}
 	}
 	return viewData{
-		Title:   "Sites",
 		View:    "admin",
 		Email:   user.Email,
 		BaseURL: s.cfg.BaseURL,
@@ -469,7 +474,6 @@ func (s *server) siteData(c echo.Context, slug string) (viewData, error) {
 	pub := sites.PublicURL(s.cfg.BaseURL, s.baseDomain, site.Slug)
 	host := site.Slug + "." + s.baseDomain
 	return viewData{
-		Title:   site.Slug,
 		View:    "site",
 		Email:   user.Email,
 		BaseURL: s.cfg.BaseURL,
@@ -493,6 +497,7 @@ func (s *server) needsSetup(ctx context.Context) (bool, error) {
 }
 
 func (s *server) render(c echo.Context, status int, name string, data viewData) error {
+	data.Lang = negotiateLang(c.Request())
 	var buf bytes.Buffer
 	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
 		return err
@@ -545,47 +550,21 @@ func copyCookies(dst http.ResponseWriter, src *http.Response) {
 	}
 }
 
-func authError(body []byte) string {
-	var msg struct {
-		Detail  string `json:"detail"`
-		Message string `json:"message"`
-		Title   string `json:"title"`
-	}
-	if json.Unmarshal(body, &msg) == nil {
-		switch {
-		case msg.Message != "":
-			return msg.Message
-		case msg.Detail != "":
-			return msg.Detail
-		case msg.Title != "":
-			return msg.Title
-		}
-	}
-	s := strings.TrimSpace(string(body))
-	if s == "" {
-		return "sign-in failed"
-	}
-	if len(s) > 300 {
-		s = s[:300]
-	}
-	return s
-}
-
-func fileErr(err error) string {
+func fileErrKey(err error) string {
 	switch {
 	case errors.Is(err, sites.ErrBadPath):
-		return "that path is not allowed"
+		return "err_bad_path"
 	case errors.Is(err, sites.ErrNotFound):
-		return "file or site not found"
+		return "err_not_found"
 	case errors.Is(err, sites.ErrTooLarge):
-		return "file is larger than 8 MiB"
+		return "err_too_large"
 	default:
-		return "could not update the file"
+		return "err_update_file"
 	}
 }
 
 type viewData struct {
-	Title      string
+	Lang       string
 	View       string
 	Email      string
 	NeedsSetup bool

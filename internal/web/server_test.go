@@ -365,6 +365,83 @@ func callToolRaw(t *testing.T, ctx context.Context, session *mcp.ClientSession, 
 	return res
 }
 
+func TestLanguage(t *testing.T) {
+	base, _ := startServer(t)
+
+	zhReq, err := http.NewRequest(http.MethodGet, base+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zhReq.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	zhRes, err := http.DefaultClient.Do(zhReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zhBody := readAll(t, zhRes)
+	if zhRes.StatusCode != http.StatusOK || !strings.Contains(zhBody, "创建第一个账号") || strings.Contains(zhBody, "Create the first account") {
+		t.Fatalf("chinese signup: %d %s", zhRes.StatusCode, zhBody)
+	}
+	if !strings.Contains(zhBody, `href="/lang?set=zh"`) || !strings.Contains(zhBody, `aria-current="true"`) {
+		t.Fatalf("language switch missing: %s", zhBody)
+	}
+
+	enReq, err := http.NewRequest(http.MethodGet, base+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enReq.Header.Set("Accept-Language", "fr-FR,fr;q=0.9,zh;q=0.4")
+	enRes, err := http.DefaultClient.Do(enReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enBody := readAll(t, enRes)
+	if !strings.Contains(enBody, "Create the first account") || strings.Contains(enBody, "创建第一个账号") {
+		t.Fatalf("non-chinese accept-language should be English: %s", enBody)
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Jar: jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	switchReq, err := http.NewRequest(http.MethodGet, base+"/lang?set=en", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	switchReq.Header.Set("Referer", base+"/")
+	switchReq.Header.Set("Accept-Language", "zh-CN")
+	switchRes, err := client.Do(switchReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	switchRes.Body.Close()
+	if switchRes.StatusCode != http.StatusSeeOther || switchRes.Header.Get("Location") != "/" {
+		t.Fatalf("lang redirect: %d %s", switchRes.StatusCode, switchRes.Header.Get("Location"))
+	}
+	var saw bool
+	for _, c := range switchRes.Cookies() {
+		if c.Name == "lang" && c.Value == "en" {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("lang cookie not set: %v", switchRes.Cookies())
+	}
+	after, err := client.Get(base + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterBody := readAll(t, after)
+	if !strings.Contains(afterBody, "Create the first account") {
+		t.Fatalf("cookie should override Accept-Language: %s", afterBody)
+	}
+}
+
 func unmarshalResult(res *mcp.CallToolResult, dest any) error {
 	b, err := json.Marshal(res.StructuredContent)
 	if err != nil {
