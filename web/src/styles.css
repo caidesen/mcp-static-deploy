@@ -14,7 +14,7 @@
   --danger: #d92d20;
   --danger-border: #fecdca;
   --danger-bg: #fef3f2;
-  --rail: 240px;
+  --column: 960px;
   font: 14px/1.5 "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -25,7 +25,7 @@ body { margin: 0; }
 a { color: var(--primary); text-decoration: none; }
 button, input { font: inherit; }
 h1, h2 { font-weight: 600; letter-spacing: -0.01em; }
-h1 { margin: 0; font-size: 20px; line-height: 24px; }
+h1 { margin: 0; font-size: 22px; line-height: 28px; }
 h2 { margin: 0 0 12px; font-size: 14px; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .boot { min-height: 100vh; background: var(--bg); }
@@ -116,63 +116,44 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .auth-block h1 { margin: 12px 0 20px; font-size: 24px; }
 .auth-submit { width: 100%; height: 40px; margin-top: 20px; }
 
-.shell { display: flex; align-items: flex-start; min-height: 100vh; background: var(--bg); }
-.sidebar {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  align-self: flex-start;
+.shell { min-height: 100vh; background: var(--bg); }
+.topbar {
   position: sticky;
   top: 0;
-  width: var(--rail);
-  height: 100vh;
-  height: 100dvh;
-  border-right: 1px solid var(--border);
+  z-index: 2;
+  height: 56px;
+  border-bottom: 1px solid var(--border);
   background: #fff;
 }
-.brand-row { display: flex; align-items: center; height: 48px; padding: 0 16px; }
-.sidebar nav { padding: 0 12px 4px; }
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: 8px;
+.topbar-inner, .column {
+  width: min(var(--column), calc(100% - 48px));
+  margin: 0 auto;
+}
+.topbar-inner { display: flex; align-items: center; justify-content: space-between; height: 100%; }
+.topbar-actions { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.account-email {
+  max-width: 240px;
+  overflow: hidden;
   color: var(--secondary);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.nav-item[aria-current="page"] { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
-.account {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 56px;
-  margin-top: auto;
+.sign-out {
+  height: 32px;
   padding: 0 12px;
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
 }
-.avatar {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 600;
-}
-.account-email { flex: 1; min-width: 0; overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.sign-out { height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
-
-.workspace { flex: 1; min-width: 0; padding: 16px 28px 32px; }
-.page-tools { display: flex; justify-content: flex-end; }
-.studio { width: 100%; max-width: 1200px; }
-.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.sign-out:hover { border-color: var(--primary); color: var(--primary); }
+.column { padding: 28px 0 48px; }
+.studio { width: 100%; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .subtitle { margin: 0; color: var(--muted); font-size: 13px; line-height: 18px; }
 .crumb { margin: 0 0 2px; color: var(--muted); font-size: 13px; }
 .crumb a { color: var(--muted); }
@@ -181,7 +162,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .app-card {
   display: flex;
   flex-direction: column;
-  height: 208px;
+  height: 176px;
   padding: 16px 16px 0;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -216,7 +197,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
   justify-content: center;
   gap: 6px;
   width: 100%;
-  height: 208px;
+  height: 176px;
   border: 1px dashed #d0d5dd;
   border-radius: 12px;
   background: transparent;
@@ -252,7 +233,6 @@ tr:last-child td { border-bottom: 0; }
 
 @media (max-width: 760px) {
   .auth-shell, .app-grid, .metrics { grid-template-columns: 1fr; }
-  .shell { flex-direction: column; }
-  .sidebar { position: static; width: 100%; height: auto; }
-  .account { margin-top: 0; }
+  .topbar-inner, .column { width: min(var(--column), calc(100% - 32px)); }
+  .account-email { display: none; }
 }
