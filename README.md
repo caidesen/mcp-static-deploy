@@ -4,7 +4,7 @@
 
 One Go binary serves three things:
 
-- an HTMX admin UI on the apex host
+- a React admin UI (Base UI, TanStack Query) built into the binary, on the apex host
 - public static files when `Host` is `{slug}.{BASE_DOMAIN}`
 - an MCP Streamable HTTP endpoint at `/mcp`
 

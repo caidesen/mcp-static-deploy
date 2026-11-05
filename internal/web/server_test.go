@@ -51,8 +51,16 @@ func TestPublishFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	body = readAll(t, res)
-	if res.StatusCode != http.StatusOK || !strings.Contains(body, `name="setup_token"`) {
+	if res.StatusCode != http.StatusOK || !strings.Contains(body, `id="root"`) {
 		t.Fatalf("setup page: %d %s", res.StatusCode, body)
+	}
+	res, err = client.Get(base + "/api/session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = readAll(t, res)
+	if res.StatusCode != http.StatusOK || !strings.Contains(body, `"needsSetup":true`) || !strings.Contains(body, `"setup_token"`) {
+		t.Fatalf("session before signup: %d %s", res.StatusCode, body)
 	}
 
 	res, err = client.Get(base + "/auth/bootstrap/status")
@@ -64,47 +72,55 @@ func TestPublishFlow(t *testing.T) {
 		t.Fatalf("bootstrap status: %d %s", res.StatusCode, body)
 	}
 
-	res = postForm(t, client, base+"/signup", url.Values{
-		"email":       {"admin@example.com"},
-		"password":    {"correct horse battery"},
-		"setup_token": {"test-setup-token"},
+	res = postJSON(t, client, base+"/api/signup", map[string]string{
+		"email":      "admin@example.com",
+		"password":   "correct horse battery",
+		"setupToken": "test-setup-token",
 	})
-	if res.StatusCode != http.StatusSeeOther {
+	if res.StatusCode != http.StatusOK {
 		t.Fatalf("signup: %d %s", res.StatusCode, readAll(t, res))
 	}
 	res.Body.Close()
 
-	res, err = client.Get(base + "/admin")
+	res, err = client.Get(base + "/api/session")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body = readAll(t, res)
 	if res.StatusCode != http.StatusOK || !strings.Contains(body, "Create site") {
-		t.Fatalf("admin: %d %s", res.StatusCode, body)
+		t.Fatalf("admin session: %d %s", res.StatusCode, body)
 	}
 	if strings.Contains(body, "Create API token") || strings.Contains(body, "API token") {
 		t.Fatalf("token form still on admin page")
 	}
-
-	res = postForm(t, client, base+"/admin/sites", nil)
-	if res.StatusCode != http.StatusSeeOther {
-		t.Fatalf("create site: %d %s", res.StatusCode, readAll(t, res))
-	}
-	res.Body.Close()
-
 	res, err = client.Get(base + "/admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body = readAll(t, res)
-	m := regexp.MustCompile(`/admin/sites/([a-z]{6})`).FindStringSubmatch(body)
+	if res.StatusCode != http.StatusOK || strings.Contains(body, "API token") {
+		t.Fatalf("admin shell: %d %s", res.StatusCode, body)
+	}
+
+	res = postJSON(t, client, base+"/api/sites", nil)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create site: %d %s", res.StatusCode, readAll(t, res))
+	}
+	res.Body.Close()
+
+	res, err = client.Get(base + "/api/sites")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = readAll(t, res)
+	m := regexp.MustCompile(`"slug":"([a-z]{6})"`).FindStringSubmatch(body)
 	if m == nil {
 		t.Fatalf("no site slug in %s", body)
 	}
 	slug := m[1]
 
-	res = postFile(t, client, base+"/admin/sites/"+slug+"/files", "index.html", "<h1>from-web</h1>")
-	if res.StatusCode != http.StatusSeeOther {
+	res = postFile(t, client, base+"/api/sites/"+slug+"/files", "index.html", "<h1>from-web</h1>")
+	if res.StatusCode != http.StatusOK {
 		t.Fatalf("upload: %d %s", res.StatusCode, readAll(t, res))
 	}
 	res.Body.Close()
@@ -251,6 +267,30 @@ func startServer(t *testing.T) (string, *Runtime) {
 		rt.Close()
 	})
 	return base, rt
+}
+
+func postJSON(t *testing.T, client *http.Client, rawURL string, payload any) *http.Response {
+	t.Helper()
+	var body io.Reader
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(http.MethodPost, rawURL, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
 }
 
 func postForm(t *testing.T, client *http.Client, rawURL string, form url.Values) *http.Response {
@@ -470,7 +510,7 @@ func callToolRaw(t *testing.T, ctx context.Context, session *mcp.ClientSession, 
 func TestLanguage(t *testing.T) {
 	base, _ := startServer(t)
 
-	zhReq, err := http.NewRequest(http.MethodGet, base+"/", nil)
+	zhReq, err := http.NewRequest(http.MethodGet, base+"/api/session", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,11 +523,25 @@ func TestLanguage(t *testing.T) {
 	if zhRes.StatusCode != http.StatusOK || !strings.Contains(zhBody, "创建第一个账号") || strings.Contains(zhBody, "Create the first account") {
 		t.Fatalf("chinese signup: %d %s", zhRes.StatusCode, zhBody)
 	}
-	if !strings.Contains(zhBody, `href="/lang?set=zh"`) || !strings.Contains(zhBody, `aria-current="true"`) {
-		t.Fatalf("language switch missing: %s", zhBody)
+	indexRes, err := http.Get(base + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexBody := readAll(t, indexRes)
+	script := regexp.MustCompile(`src="([^"]+\.js)"`).FindStringSubmatch(indexBody)
+	if script == nil {
+		t.Fatalf("app script missing: %s", indexBody)
+	}
+	jsRes, err := http.Get(base + script[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsBody := readAll(t, jsRes)
+	if !strings.Contains(jsBody, "/lang?set=zh") || !strings.Contains(jsBody, "aria-current") {
+		t.Fatalf("language switch missing from app")
 	}
 
-	enReq, err := http.NewRequest(http.MethodGet, base+"/", nil)
+	enReq, err := http.NewRequest(http.MethodGet, base+"/api/session", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +588,7 @@ func TestLanguage(t *testing.T) {
 	if !saw {
 		t.Fatalf("lang cookie not set: %v", switchRes.Cookies())
 	}
-	after, err := client.Get(base + "/")
+	after, err := client.Get(base + "/api/session")
 	if err != nil {
 		t.Fatal(err)
 	}

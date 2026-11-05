@@ -1,5 +1,0 @@
-htmx.min.js is htmx 2.0.4 (https://htmx.org), included so the admin UI
-works without a CDN.
-
-Copyright (c) 2020 Big Sky Software
-BSD 2-Clause License. See https://github.com/bigskysoftware/htmx/blob/master/LICENSE

@@ -17,6 +17,16 @@
 #
 # Wildcard DNS for *.BASE_DOMAIN is not configured by this image.
 
+FROM node:22-bookworm AS ui
+
+WORKDIR /src
+
+COPY web/package.json web/package-lock.json web/
+RUN npm ci --prefix web
+
+COPY web web
+RUN npm run build --prefix web
+
 FROM golang:1.26.10-bookworm AS build
 
 WORKDIR /src
@@ -25,6 +35,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=ui /src/internal/web/dist ./internal/web/dist
 
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mcp-static-deploy ./cmd/server \
     && mkdir -p /out/data \

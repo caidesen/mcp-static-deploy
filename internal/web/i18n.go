@@ -17,7 +17,7 @@ const (
 	langCookie = "lang"
 )
 
-// messages is the UI catalog. Templates call viewData.T with these keys.
+// messages is the UI catalog returned by GET /api/session.
 // Slugs, URLs, commands, and MCP tool names are not entries.
 var messages = map[string]map[string]string{
 	langEN: {
@@ -213,10 +213,6 @@ func text(lang, key string) string {
 		return s
 	}
 	return key
-}
-
-func (v viewData) T(key string) string {
-	return text(v.Lang, key)
 }
 
 // negotiateLang uses the lang cookie when it is zh or en.

@@ -6,15 +6,15 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
-	"html/template"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/caidesen/mcp-static-deploy/internal/auth"
 	"github.com/caidesen/mcp-static-deploy/internal/mcp"
@@ -25,8 +25,8 @@ import (
 	echomw "github.com/labstack/echo/v4/middleware"
 )
 
-//go:embed templates/*.html static/*
-var embedded embed.FS
+//go:embed dist
+var distFS embed.FS
 
 // Config is the process configuration the HTTP server needs.
 type Config struct {
@@ -93,16 +93,12 @@ type server struct {
 	sites      *sites.Store
 	cfg        Config
 	origin     string
-	tmpl       *template.Template
+	dist       fs.FS
 	baseDomain string
 }
 
 func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, error) {
-	tmpl, err := template.ParseFS(embedded, "templates/*.html")
-	if err != nil {
-		return nil, err
-	}
-	static, err := fs.Sub(embedded, "static")
+	dist, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +111,7 @@ func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, err
 		sites:      store,
 		cfg:        cfg,
 		origin:     auth.Origin(cfg.BaseURL),
-		tmpl:       tmpl,
+		dist:       dist,
 		baseDomain: cfg.BaseDomain,
 	}
 	e.Use(echomw.Recover())
@@ -128,19 +124,23 @@ func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, err
 	})
 	e.Use(echo.WrapMiddleware(app.Auth.Authn()))
 
-	e.GET("/", s.home)
+	e.GET("/", s.page)
+	e.GET("/admin", s.page)
+	e.GET("/admin/sites/:slug", s.page)
+	e.GET("/assets/*", s.asset)
 	e.GET("/lang", s.setLang)
-	e.POST("/signup", s.signup)
-	e.POST("/login", s.login)
-	e.POST("/logout", s.logout)
-	e.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", http.FileServer(http.FS(static)))))
 
-	admin := e.Group("/admin", s.requireUser)
-	admin.GET("", s.admin)
-	admin.POST("/sites", s.createSite)
-	admin.GET("/sites/:slug", s.sitePage)
-	admin.POST("/sites/:slug/files", s.upload)
-	admin.POST("/sites/:slug/files/delete", s.deleteFile)
+	api := e.Group("/api")
+	api.GET("/session", s.session)
+	api.POST("/signup", s.signup)
+	api.POST("/login", s.login)
+	api.POST("/logout", s.logout)
+	authed := api.Group("", s.requireAPI)
+	authed.GET("/sites", s.listSites)
+	authed.POST("/sites", s.createSite)
+	authed.GET("/sites/:slug", s.getSite)
+	authed.POST("/sites/:slug/files", s.upload)
+	authed.DELETE("/sites/:slug/files", s.deleteFile)
 
 	// theauth mounts session routes under /auth/ and the authorization server
 	// at /.well-known and /oauth. Echo forwards those paths unchanged.
@@ -186,38 +186,76 @@ func headerWritten(w http.ResponseWriter) bool {
 	return false
 }
 
-func (s *server) requireUser(next echo.HandlerFunc) echo.HandlerFunc {
+func (s *server) requireAPI(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if _, ok := theauth.UserFromContext(c.Request().Context()); !ok {
-			if c.Request().Header.Get("HX-Request") == "true" {
-				c.Response().Header().Set("HX-Redirect", "/")
-				return c.NoContent(http.StatusUnauthorized)
-			}
-			return c.Redirect(http.StatusSeeOther, "/")
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "err_sign_in_failed"})
 		}
 		c.Response().Header().Set("Cache-Control", "no-store")
 		return next(c)
 	}
 }
 
-func (s *server) home(c echo.Context) error {
+func (s *server) page(c echo.Context) error {
 	next := safeOAuthNext(c.QueryParam("next"))
-	if _, ok := theauth.UserFromContext(c.Request().Context()); ok {
+	_, signedIn := theauth.UserFromContext(c.Request().Context())
+	if signedIn {
 		if next != "" {
 			return c.Redirect(http.StatusSeeOther, next)
 		}
-		return c.Redirect(http.StatusSeeOther, "/admin")
+		if c.Request().URL.Path == "/" {
+			return c.Redirect(http.StatusSeeOther, "/admin")
+		}
+	} else if strings.HasPrefix(c.Request().URL.Path, "/admin") {
+		return c.Redirect(http.StatusSeeOther, "/")
 	}
+	b, err := fs.ReadFile(s.dist, "index.html")
+	if err != nil {
+		return err
+	}
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.HTMLBlob(http.StatusOK, b)
+}
+
+func (s *server) asset(c echo.Context) error {
+	name := path.Clean(strings.TrimPrefix(c.Request().URL.Path, "/"))
+	if name == "." || strings.HasPrefix(name, "../") || strings.Contains(name, "..") {
+		return echo.ErrNotFound
+	}
+	f, err := s.dist.Open(name)
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		return echo.ErrNotFound
+	}
+	c.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	http.ServeContent(c.Response(), c.Request(), info.Name(), info.ModTime(), f.(io.ReadSeeker))
+	return nil
+}
+
+func (s *server) session(c echo.Context) error {
+	lang := negotiateLang(c.Request())
 	needs, err := s.needsSetup(c.Request().Context())
 	if err != nil {
 		return err
 	}
-	return s.render(c, http.StatusOK, "layout", viewData{
-		View:       "login",
-		NeedsSetup: needs,
-		BaseURL:    s.cfg.BaseURL,
-		Next:       next,
-	})
+	out := map[string]any{
+		"authenticated": false,
+		"email":         "",
+		"needsSetup":    needs,
+		"lang":          lang,
+		"baseURL":       s.cfg.BaseURL,
+		"messages":      messages[lang],
+	}
+	if user, ok := theauth.UserFromContext(c.Request().Context()); ok {
+		out["authenticated"] = true
+		out["email"] = user.Email
+	}
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.JSON(http.StatusOK, out)
 }
 
 func (s *server) setLang(c echo.Context) error {
@@ -235,33 +273,48 @@ func (s *server) setLang(c echo.Context) error {
 	return c.Redirect(http.StatusSeeOther, langRedirect(c.Request()))
 }
 
+type authBody struct {
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	SetupToken string `json:"setupToken"`
+	Next       string `json:"next"`
+}
+
 func (s *server) signup(c echo.Context) error {
 	if err := limitBody(c, 1<<16); err != nil {
 		return err
 	}
+	var body authBody
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "err_bad_request"})
+	}
 	rec, err := s.callAuth(c.Request(), http.MethodPost, "/auth/email-password/signup", map[string]string{
-		"email":      strings.TrimSpace(c.FormValue("email")),
-		"password":   c.FormValue("password"),
-		"setupToken": c.FormValue("setup_token"),
-	}, http.Header{"X-Setup-Token": []string{c.FormValue("setup_token")}})
+		"email":      strings.TrimSpace(body.Email),
+		"password":   body.Password,
+		"setupToken": body.SetupToken,
+	}, http.Header{"X-Setup-Token": []string{body.SetupToken}})
 	if err != nil {
 		return err
 	}
-	return s.finishAuth(c, rec, true)
+	return s.finishAuth(c, rec, body.Next)
 }
 
 func (s *server) login(c echo.Context) error {
 	if err := limitBody(c, 1<<16); err != nil {
 		return err
 	}
+	var body authBody
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "err_bad_request"})
+	}
 	rec, err := s.callAuth(c.Request(), http.MethodPost, "/auth/email-password/signin", map[string]string{
-		"email":    strings.TrimSpace(c.FormValue("email")),
-		"password": c.FormValue("password"),
+		"email":    strings.TrimSpace(body.Email),
+		"password": body.Password,
 	}, nil)
 	if err != nil {
 		return err
 	}
-	return s.finishAuth(c, rec, false)
+	return s.finishAuth(c, rec, body.Next)
 }
 
 func (s *server) logout(c echo.Context) error {
@@ -270,78 +323,66 @@ func (s *server) logout(c echo.Context) error {
 		return err
 	}
 	copyCookies(c.Response(), rec.Result())
-	return c.Redirect(http.StatusSeeOther, "/")
+	return c.JSON(http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *server) finishAuth(c echo.Context, rec *httptest.ResponseRecorder, setup bool) error {
+func (s *server) finishAuth(c echo.Context, rec *httptest.ResponseRecorder, next string) error {
 	copyCookies(c.Response(), rec.Result())
-	next := safeOAuthNext(c.FormValue("next"))
 	if rec.Code/100 == 2 {
-		if next != "" {
-			return c.Redirect(http.StatusSeeOther, next)
+		dest := safeOAuthNext(next)
+		if dest == "" {
+			dest = "/admin"
 		}
-		return c.Redirect(http.StatusSeeOther, "/admin")
+		return c.JSON(http.StatusOK, map[string]any{"ok": true, "next": dest})
 	}
-	needs := setup
-	if !setup {
-		var err error
-		needs, err = s.needsSetup(c.Request().Context())
-		if err != nil {
-			return err
-		}
+	status := rec.Code
+	if status < 400 {
+		status = http.StatusBadRequest
 	}
-	return s.render(c, rec.Code, "layout", viewData{
-		View:       "login",
-		NeedsSetup: needs,
-		Error:      authErrorKey(rec.Body.Bytes()),
-		BaseURL:    s.cfg.BaseURL,
-		Next:       next,
-	})
+	return c.JSON(status, map[string]string{"error": authErrorKey(rec.Body.Bytes())})
 }
 
-func (s *server) admin(c echo.Context) error {
-	data, err := s.adminData(c)
+func (s *server) listSites(c echo.Context) error {
+	rows, err := s.siteRows(c)
 	if err != nil {
 		return err
 	}
-	return s.render(c, http.StatusOK, "layout", data)
+	return c.JSON(http.StatusOK, rows)
 }
 
 func (s *server) createSite(c echo.Context) error {
 	user, _ := theauth.UserFromContext(c.Request().Context())
-	if _, err := s.sites.Create(c.Request().Context(), user.ID.String()); err != nil {
+	site, err := s.sites.Create(c.Request().Context(), user.ID.String())
+	if err != nil {
 		return err
 	}
-	if fragment(c) {
-		data, err := s.adminData(c)
-		if err != nil {
-			return err
-		}
-		return s.render(c, http.StatusOK, "site-list", data)
+	row, err := s.siteCard(c, site)
+	if err != nil {
+		return err
 	}
-	return c.Redirect(http.StatusSeeOther, "/admin")
+	return c.JSON(http.StatusCreated, row)
 }
 
-func (s *server) sitePage(c echo.Context) error {
-	data, err := s.siteData(c, c.Param("slug"))
+func (s *server) getSite(c echo.Context) error {
+	detail, err := s.siteDetail(c, c.Param("slug"))
 	if err != nil {
 		if errors.Is(err, sites.ErrNotFound) {
-			return c.String(http.StatusNotFound, "site not found")
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "err_not_found"})
 		}
 		return err
 	}
-	return s.render(c, http.StatusOK, "layout", data)
+	return c.JSON(http.StatusOK, detail)
 }
 
 func (s *server) upload(c echo.Context) error {
 	if err := limitBody(c, sites.MaxFileBytes+(1<<20)); err != nil {
-		return s.siteError(c, c.Param("slug"), "err_upload_too_large")
+		return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "err_upload_too_large"})
 	}
 	user, _ := theauth.UserFromContext(c.Request().Context())
 	slug := c.Param("slug")
 	fh, err := c.FormFile("file")
 	if err != nil {
-		return s.siteError(c, slug, "err_choose_file")
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "err_choose_file"})
 	}
 	rel := strings.TrimSpace(c.FormValue("path"))
 	if rel == "" {
@@ -353,117 +394,83 @@ func (s *server) upload(c echo.Context) error {
 	}
 	defer f.Close()
 	if err := s.sites.PutFile(c.Request().Context(), user.ID.String(), slug, rel, f); err != nil {
-		return s.siteError(c, slug, fileErrKey(err))
+		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": fileErrKey(err)})
 	}
-	if fragment(c) {
-		data, err := s.siteData(c, slug)
-		if err != nil {
-			return err
-		}
-		data.Fragment = true
-		return s.render(c, http.StatusOK, "file-list", data)
+	detail, err := s.siteDetail(c, slug)
+	if err != nil {
+		return err
 	}
-	return c.Redirect(http.StatusSeeOther, "/admin/sites/"+url.PathEscape(slug))
+	return c.JSON(http.StatusOK, detail)
 }
 
 func (s *server) deleteFile(c echo.Context) error {
 	user, _ := theauth.UserFromContext(c.Request().Context())
 	slug := c.Param("slug")
-	if err := s.sites.DeleteFile(c.Request().Context(), user.ID.String(), slug, c.FormValue("path")); err != nil {
-		return s.siteError(c, slug, fileErrKey(err))
+	if err := s.sites.DeleteFile(c.Request().Context(), user.ID.String(), slug, c.QueryParam("path")); err != nil {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": fileErrKey(err)})
 	}
-	if fragment(c) {
-		data, err := s.siteData(c, slug)
-		if err != nil {
-			return err
-		}
-		data.Fragment = true
-		return s.render(c, http.StatusOK, "file-list", data)
-	}
-	return c.Redirect(http.StatusSeeOther, "/admin/sites/"+url.PathEscape(slug))
-}
-
-func (s *server) siteError(c echo.Context, slug, key string) error {
-	data, err := s.siteData(c, slug)
+	detail, err := s.siteDetail(c, slug)
 	if err != nil {
-		return c.String(http.StatusBadRequest, text(negotiateLang(c.Request()), key))
+		return err
 	}
-	data.Error = key
-	if fragment(c) {
-		data.Fragment = true
-		return s.render(c, http.StatusUnprocessableEntity, "file-list", data)
-	}
-	return s.render(c, http.StatusUnprocessableEntity, "layout", data)
+	return c.JSON(http.StatusOK, detail)
 }
 
-func (s *server) adminData(c echo.Context) (viewData, error) {
+func (s *server) siteRows(c echo.Context) ([]siteJSON, error) {
 	user, _ := theauth.UserFromContext(c.Request().Context())
 	list, err := s.sites.ListByOwner(c.Request().Context(), user.ID.String())
 	if err != nil {
-		return viewData{}, err
+		return nil, err
 	}
-	rows := make([]siteRow, 0, len(list))
+	rows := make([]siteJSON, 0, len(list))
 	for _, site := range list {
 		row, err := s.siteCard(c, site)
 		if err != nil {
-			return viewData{}, err
+			return nil, err
 		}
 		rows = append(rows, row)
 	}
-	return viewData{
-		View:    "admin",
-		Email:   user.Email,
-		BaseURL: s.cfg.BaseURL,
-		Sites:   rows,
-	}, nil
+	return rows, nil
 }
 
-func (s *server) siteData(c echo.Context, slug string) (viewData, error) {
+func (s *server) siteDetail(c echo.Context, slug string) (siteDetailJSON, error) {
 	user, _ := theauth.UserFromContext(c.Request().Context())
 	site, err := s.sites.GetOwned(c.Request().Context(), user.ID.String(), slug)
 	if err != nil {
-		return viewData{}, err
+		return siteDetailJSON{}, err
 	}
 	files, err := s.sites.ListFiles(c.Request().Context(), user.ID.String(), slug)
 	if err != nil {
-		return viewData{}, err
+		return siteDetailJSON{}, err
 	}
-	fileRows := make([]fileRow, 0, len(files))
-	for _, f := range files {
-		fileRows = append(fileRows, fileRow{Path: f.Path, Size: f.Size})
-	}
-	host := site.Slug + "." + s.baseDomain
 	card, err := s.siteCard(c, site)
 	if err != nil {
-		return viewData{}, err
+		return siteDetailJSON{}, err
 	}
-	return viewData{
-		View:    "site",
-		Email:   user.Email,
-		BaseURL: s.cfg.BaseURL,
-		HasSite: true,
-		Site:    card,
-		Files:   fileRows,
-		Curl:    "curl -H " + strconv.Quote("Host: "+host) + " " + strings.TrimRight(s.cfg.BaseURL, "/") + "/",
+	fileRows := make([]fileJSON, 0, len(files))
+	for _, f := range files {
+		fileRows = append(fileRows, fileJSON{Path: f.Path, Size: f.Size})
+	}
+	host := site.Slug + "." + s.baseDomain
+	return siteDetailJSON{
+		Site:  card,
+		Files: fileRows,
+		Curl:  "curl -H " + strconv.Quote("Host: "+host) + " " + strings.TrimRight(s.cfg.BaseURL, "/") + "/",
 	}, nil
 }
 
-func (s *server) siteCard(c echo.Context, site sites.Site) (siteRow, error) {
+func (s *server) siteCard(c echo.Context, site sites.Site) (siteJSON, error) {
 	files, err := s.sites.ListFiles(c.Request().Context(), site.OwnerUserID, site.Slug)
 	if err != nil {
-		return siteRow{}, err
+		return siteJSON{}, err
 	}
-	lang := negotiateLang(c.Request())
 	pub := sites.PublicURL(s.cfg.BaseURL, s.baseDomain, site.Slug)
-	return siteRow{
+	return siteJSON{
 		Slug:  site.Slug,
 		URL:   pub,
 		Host:  publicHost(pub),
 		Files: len(files),
-		When:  relativeTime(lang, site.CreatedAt),
-		Mark:  slugMark(site.Slug),
-		Icon:  iconClass(site.Slug),
-		Count: fileCountText(lang, len(files)),
+		Count: fileCountText(negotiateLang(c.Request()), len(files)),
 	}, nil
 }
 
@@ -473,15 +480,6 @@ func (s *server) needsSetup(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return n == 0, nil
-}
-
-func (s *server) render(c echo.Context, status int, name string, data viewData) error {
-	data.Lang = negotiateLang(c.Request())
-	var buf bytes.Buffer
-	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
-		return err
-	}
-	return c.HTML(status, buf.String())
 }
 
 func (s *server) callAuth(r *http.Request, method, path string, body any, extra http.Header) (*httptest.ResponseRecorder, error) {
@@ -519,10 +517,6 @@ func limitBody(c echo.Context, n int64) error {
 	return nil
 }
 
-func fragment(c echo.Context) bool {
-	return c.Request().Header.Get("HX-Request") == "true"
-}
-
 func copyCookies(dst http.ResponseWriter, src *http.Response) {
 	for _, c := range src.Cookies() {
 		http.SetCookie(dst, c)
@@ -542,43 +536,23 @@ func fileErrKey(err error) string {
 	}
 }
 
-type viewData struct {
-	Lang       string
-	View       string
-	Email      string
-	NeedsSetup bool
-	Error      string
-	BaseURL    string
-	Next       string
-	Sites      []siteRow
-	Site       siteRow
-	HasSite    bool
-	Files      []fileRow
-	Curl       string
-	Fragment   bool
+type siteJSON struct {
+	Slug  string `json:"slug"`
+	URL   string `json:"url"`
+	Host  string `json:"host"`
+	Files int    `json:"files"`
+	Count string `json:"count"`
 }
 
-func (v viewData) Initial() string {
-	email := strings.TrimSpace(v.Email)
-	if email == "" {
-		return "?"
-	}
-	r, _ := utf8.DecodeRuneInString(email)
-	if r == utf8.RuneError {
-		return "?"
-	}
-	return strings.ToUpper(string(r))
+type fileJSON struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
 }
 
-type siteRow struct {
-	Slug  string
-	URL   string
-	Host  string
-	Files int
-	When  string
-	Mark  string
-	Icon  string
-	Count string
+type siteDetailJSON struct {
+	Site  siteJSON   `json:"site"`
+	Files []fileJSON `json:"files"`
+	Curl  string     `json:"curl"`
 }
 
 func publicHost(raw string) string {
@@ -587,26 +561,6 @@ func publicHost(raw string) string {
 		return raw
 	}
 	return u.Host
-}
-
-func slugMark(slug string) string {
-	r, _ := utf8.DecodeRuneInString(slug)
-	if r == utf8.RuneError {
-		return "?"
-	}
-	return strings.ToUpper(string(r))
-}
-
-func iconClass(slug string) string {
-	if slug == "" {
-		return "icon-0"
-	}
-	return "icon-" + strconv.Itoa(int(slug[0])%6)
-}
-
-type fileRow struct {
-	Path string
-	Size int64
 }
 
 // safeOAuthNext allows the browser to resume /oauth/authorize after sign-in.

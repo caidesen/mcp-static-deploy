@@ -1,4 +1,5 @@
 /data/
+/web/node_modules/
 oauth-encryption.key
 /server
 *.db

@@ -2,6 +2,7 @@
 .github
 data
 server
+web/node_modules
 *.db
 *.db-wal
 *.db-shm
