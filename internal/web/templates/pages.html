@@ -99,6 +99,7 @@ document.addEventListener("click", function (e) {
 {{end}}
 
 {{define "admin"}}
+<div class="studio">
 <div class="page-head">
   <div>
     <h1>{{.T "sites"}}</h1>
@@ -114,6 +115,7 @@ document.addEventListener("click", function (e) {
 {{if .Error}}<p class="error" role="alert">{{.T .Error}}</p>{{end}}
 {{template "site-list" .}}
 <p class="tools-note"><span>{{.T "tools_heading"}}</span> <code>create_site</code>, <code>put_file</code>, <code>delete_file</code>, <code>list_files</code>. {{.T "anon_rejected"}}</p>
+</div>
 {{end}}
 
 {{define "site-list"}}
@@ -123,17 +125,12 @@ document.addEventListener("click", function (e) {
 <article class="app-card">
   <a class="app-main" href="/admin/sites/{{.Slug}}">
     <span class="app-icon {{.Icon}}" aria-hidden="true">{{.Mark}}</span>
-    <span class="app-copy">
-      <span class="app-name">{{.Slug}}</span>
-      <span class="app-meta">{{.Host}}</span>
-    </span>
+    <span class="app-name">{{.Slug}}</span>
   </a>
+  <p class="app-desc">{{.Host}}</p>
   <div class="app-foot">
-    <span>{{.Count}}</span>
-    <span class="app-foot-end">
-      <span>{{.When}}</span>
-      <button type="button" class="copy-btn" data-copy="{{.URL}}" data-label="{{$.T "copy_link"}}" data-copied="{{$.T "copied"}}">{{$.T "copy_link"}}</button>
-    </span>
+    <span>{{.Count}} · {{.When}}</span>
+    <button type="button" class="copy-btn" data-copy="{{.URL}}" data-label="{{$.T "copy_link"}}" data-copied="{{$.T "copied"}}">{{$.T "copy_link"}}</button>
   </div>
 </article>
 {{end}}
@@ -150,6 +147,7 @@ document.addEventListener("click", function (e) {
 {{end}}
 
 {{define "site"}}
+<div class="studio">
 <div class="page-head">
   <div>
     <p class="crumb"><a href="/admin">{{.T "all_sites"}}</a> <span aria-hidden="true">/</span> {{.Site.Slug}}</p>
@@ -157,18 +155,23 @@ document.addEventListener("click", function (e) {
   </div>
   <div class="page-actions">{{template "lang" .}}</div>
 </div>
-<section class="stats">
-  <div class="stat">
-    <span class="stat-label">{{.T "files_label"}}</span>
+<section class="metrics">
+  <article class="metric">
+    <span class="metric-label">{{.T "files_label"}}</span>
     <strong id="file-count">{{len .Files}}</strong>
-  </div>
-  <div class="stat stat-url">
-    <span class="stat-label">{{.T "public_url"}}</span>
-    <a class="url" href="{{.Site.URL}}">{{.Site.URL}}</a>
-    <button type="button" class="copy-btn" data-copy="{{.Site.URL}}" data-label="{{.T "copy_link"}}" data-copied="{{.T "copied"}}">{{.T "copy_link"}}</button>
-  </div>
+  </article>
+  <article class="metric">
+    <span class="metric-label">{{.T "public_url"}}</span>
+    <div class="metric-row">
+      <a class="metric-host" href="{{.Site.URL}}">{{.Site.Host}}</a>
+      <button type="button" class="copy-btn" data-copy="{{.Site.URL}}" data-label="{{.T "copy_link"}}" data-copied="{{.T "copied"}}">{{.T "copy_link"}}</button>
+    </div>
+  </article>
 </section>
-<p class="local"><span>{{.T "local_check"}}</span> <code>{{.Curl}}</code></p>
+<details class="secondary">
+  <summary>{{.T "local_check"}}</summary>
+  <code>{{.Curl}}</code>
+</details>
 {{if .Error}}<p class="error" role="alert">{{.T .Error}}</p>{{end}}
 <form class="card" method="post" action="/admin/sites/{{.Site.Slug}}/files" enctype="multipart/form-data"
       hx-post="/admin/sites/{{.Site.Slug}}/files" hx-encoding="multipart/form-data" hx-target="#files" hx-swap="outerHTML">
@@ -180,11 +183,13 @@ document.addEventListener("click", function (e) {
   <button class="primary" type="submit">{{.T "upload"}}</button>
 </form>
 {{template "file-list" .}}
+</div>
 {{end}}
 
 {{define "file-list"}}
 {{if .Fragment}}<span id="file-count" hx-swap-oob="true">{{len .Files}}</span>{{end}}
 <div id="files" class="card table-card">
+<div class="card-head"><h2>{{.T "files_heading"}}</h2></div>
 {{if .Files}}
 <table>
   <thead>
