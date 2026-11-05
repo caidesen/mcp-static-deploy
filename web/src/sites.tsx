@@ -1,5 +1,7 @@
 import { Button } from "@base-ui/react/button";
 import { Dialog } from "@base-ui/react/dialog";
+import { Field } from "@base-ui/react/field";
+import { Form } from "@base-ui/react/form";
 import { Menu } from "@base-ui/react/menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -38,14 +40,23 @@ export function SitesPage({ session }: { session: Session }) {
             <Dialog.Backdrop className="dialog-backdrop" />
             <Dialog.Viewport className="dialog-viewport">
               <Dialog.Popup className="dialog-popup">
-                <Dialog.Title className="dialog-title">{t("create_site")}</Dialog.Title>
-                <Dialog.Description className="dialog-copy">{t("site_hint")}</Dialog.Description>
-                <div className="dialog-actions">
-                  <Dialog.Close className="btn btn-ghost">{t("cancel")}</Dialog.Close>
-                  <Button type="button" className="btn btn-primary" disabled={create.isPending} onClick={() => create.mutate()}>
+                <Form
+                  className="stack-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    create.mutate();
+                  }}
+                >
+                  <Dialog.Title className="dialog-title">{t("create_site")}</Dialog.Title>
+                  <Field.Root className="field">
+                    <Field.Label className="label">{t("sites")}</Field.Label>
+                    <Field.Description className="field-hint">{t("site_hint")}</Field.Description>
+                  </Field.Root>
+                  <Button type="submit" className="btn btn-primary form-submit" disabled={create.isPending}>
                     {t("create_site")}
                   </Button>
-                </div>
+                  <Dialog.Close className="btn btn-ghost form-submit">{t("cancel")}</Dialog.Close>
+                </Form>
               </Dialog.Popup>
             </Dialog.Viewport>
           </Dialog.Portal>

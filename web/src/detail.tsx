@@ -4,7 +4,7 @@ import { Field } from "@base-ui/react/field";
 import { Form } from "@base-ui/react/form";
 import { Input } from "@base-ui/react/input";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, api, type Session, type SiteDetail } from "./api";
 import { CopyMenu } from "./sites";
@@ -15,6 +15,8 @@ export function DetailPage({ session }: { session: Session }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState("");
   const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const [fileName, setFileName] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const detail = useQuery({
     queryKey: ["site", slug],
     queryFn: () => api<SiteDetail>(`/api/sites/${slug}`),
@@ -92,18 +94,35 @@ export function DetailPage({ session }: { session: Session }) {
           }
           upload.mutate(data);
           event.currentTarget.reset();
+          setFileName("");
         }}
       >
         <h2>{t("upload")}</h2>
         <Field.Root name="file" className="field">
-          <Field.Label className="label">{t("file")}</Field.Label>
-          <Input id="file" name="file" type="file" required className="text-input file-input" />
+          <Field.Label className="label" htmlFor="file">
+            {t("file")}
+          </Field.Label>
+          <div className="file-field">
+            <Input
+              id="file"
+              name="file"
+              type="file"
+              required
+              className="file-native"
+              ref={fileRef}
+              onChange={(event) => setFileName(event.currentTarget.files?.[0]?.name ?? "")}
+            />
+            <Button type="button" className="btn file-picker" onClick={() => fileRef.current?.click()}>
+              <span>{t("choose_file")}</span>
+              {fileName ? <span className="file-name">{fileName}</span> : null}
+            </Button>
+          </div>
         </Field.Root>
         <Field.Root name="path" className="field">
           <Field.Label className="label">{t("path_label")}</Field.Label>
           <Input id="path" name="path" type="text" placeholder="index.html" autoComplete="off" className="text-input" />
         </Field.Root>
-        <Button type="submit" className="btn btn-primary" disabled={upload.isPending}>
+        <Button type="submit" className="btn btn-primary form-submit" disabled={upload.isPending}>
           {t("upload")}
         </Button>
       </Form>
