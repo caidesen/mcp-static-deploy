@@ -5,88 +5,79 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if eq .View "site"}}{{.Site.Slug}}{{else if eq .View "admin"}}{{.T "sites"}}{{else if .NeedsSetup}}{{.T "create_account"}}{{else}}{{.T "sign_in"}}{{end}} · {{.T "brand"}}</title>
 <script src="/static/htmx.min.js"></script>
-<style>
-:root { color-scheme: light; }
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
-  background: #f4f1ea;
-  color: #1c1917;
-}
-header, main { width: min(42rem, calc(100% - 2rem)); margin: 0 auto; }
-header { display: flex; justify-content: space-between; align-items: baseline; padding: 1.25rem 0 0.5rem; }
-header a { color: inherit; text-decoration: none; font-weight: 650; }
-header form { margin: 0; }
-header .end { display: flex; align-items: baseline; gap: 0.85rem; }
-header .end button { margin-top: 0; }
-header .lang-switch { display: inline-flex; align-items: baseline; gap: 0.3rem; font-size: 0.92rem; font-weight: 450; }
-header .lang-switch a { color: #57534e; font-weight: 450; }
-header .lang-switch a[aria-current="true"] { color: inherit; font-weight: 650; }
-main { padding-bottom: 3rem; }
-h1 { font-size: 1.6rem; line-height: 1.2; margin: 0.4rem 0 0.8rem; }
-h2 { font-size: 1.05rem; margin: 1.6rem 0 0.5rem; }
-a { color: #0f5c56; }
-.card, form.card, .note {
-  background: #fff;
-  border: 1px solid #e4dfd4;
-  border-radius: 12px;
-  padding: 1rem 1.1rem;
-  margin: 0.75rem 0;
-}
-label { display: block; font-size: 0.85rem; margin: 0.7rem 0 0.25rem; }
-input[type="email"], input[type="password"], input[type="text"], input[type="file"] {
-  width: 100%;
-  padding: 0.45rem 0.55rem;
-  border: 1px solid #d6d0c4;
-  border-radius: 8px;
-  font: inherit;
-  background: #fff;
-}
-button, .button {
-  display: inline-block;
-  margin-top: 0.8rem;
-  background: #0f5c56;
-  color: #fff;
-  border: 0;
-  border-radius: 8px;
-  padding: 0.45rem 0.8rem;
-  font: inherit;
-  cursor: pointer;
-  text-decoration: none;
-}
-button.quiet, button.danger { background: #fff; color: #1c1917; border: 1px solid #d6d0c4; }
-button.danger { color: #9f1239; }
-.error { color: #9f1239; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 0.5rem 0.7rem; }
-.secret { font-family: ui-monospace, monospace; width: 100%; }
-.files { list-style: none; padding: 0; margin: 0; }
-.files li { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: 0.35rem 0; border-top: 1px solid #f0ebe3; }
-.files form { margin: 0; }
-.muted { color: #57534e; font-size: 0.92rem; }
-code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92rem; }
-</style>
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<header>
-  <a href="/admin">{{.T "brand"}}</a>
-  <div class="end">
-    <nav class="lang-switch" aria-label="{{.T "language"}}">
-      <a href="/lang?set=zh"{{if eq .Lang "zh"}} aria-current="true"{{end}}>中</a>
-      <span aria-hidden="true">/</span>
-      <a href="/lang?set=en"{{if eq .Lang "en"}} aria-current="true"{{end}}>EN</a>
-    </nav>
-    {{if .Email}}
-    <form method="post" action="/logout"><button class="quiet" type="submit">{{.T "sign_out"}}</button></form>
-    {{end}}
+{{if eq .View "login"}}
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-top">
+      {{template "logo" .}}
+      {{template "lang" .}}
+    </div>
+    {{template "login" .}}
   </div>
-</header>
-<main>
-{{if eq .View "login"}}{{template "login" .}}{{end}}
-{{if eq .View "admin"}}{{template "admin" .}}{{end}}
-{{if eq .View "site"}}{{template "site" .}}{{end}}
-</main>
+</div>
+{{else}}
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand-row">{{template "logo" .}}</div>
+    <nav>
+      <a class="nav-item" href="/admin"{{if or (eq .View "admin") (eq .View "site")}} aria-current="page"{{end}}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 6h13" stroke="currentColor" stroke-width="1.4"/></svg>
+        {{.T "sites"}}
+      </a>
+    </nav>
+    <div class="sidebar-foot">
+      <span class="account-label">{{.T "signed_in_as"}}</span>
+      <span class="account-email">{{.Email}}</span>
+      <form method="post" action="/logout"><button class="quiet sign-out" type="submit">{{.T "sign_out"}}</button></form>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <div class="crumb">
+        {{if eq .View "site"}}
+        <a href="/admin">{{.T "all_sites"}}</a>
+        <span class="sep" aria-hidden="true">/</span>
+        <h1>{{.Site.Slug}}</h1>
+        {{else}}
+        <h1>{{.T "sites"}}</h1>
+        {{end}}
+      </div>
+      <div class="topbar-end">
+        {{if eq .View "admin"}}
+        <form method="post" action="/admin/sites" hx-post="/admin/sites" hx-target="#sites" hx-swap="outerHTML">
+          <button type="submit">{{.T "create_site"}}</button>
+        </form>
+        {{end}}
+        {{template "lang" .}}
+      </div>
+    </header>
+    <main class="canvas">
+      {{if eq .View "admin"}}{{template "admin" .}}{{end}}
+      {{if eq .View "site"}}{{template "site" .}}{{end}}
+    </main>
+  </div>
+</div>
+{{end}}
 </body>
 </html>
+{{end}}
+
+{{define "logo"}}
+<a class="logo" href="{{if .Email}}/admin{{else}}/{{end}}">
+  <svg class="mark" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="8" fill="#155eef"/><rect x="7" y="7" width="6" height="6" rx="1.5" fill="#fff"/><rect x="15" y="7" width="6" height="6" rx="1.5" fill="#fff" opacity=".85"/><rect x="7" y="15" width="6" height="6" rx="1.5" fill="#fff" opacity=".7"/><rect x="15" y="15" width="6" height="6" rx="1.5" fill="#fff" opacity=".5"/></svg>
+  {{.T "brand"}}
+</a>
+{{end}}
+
+{{define "lang"}}
+<nav class="lang-switch" aria-label="{{.T "language"}}">
+  <a href="/lang?set=zh"{{if eq .Lang "zh"}} aria-current="true"{{end}}>中</a>
+  <span aria-hidden="true">/</span>
+  <a href="/lang?set=en"{{if eq .Lang "en"}} aria-current="true"{{end}}>EN</a>
+</nav>
 {{end}}
 
 {{define "login"}}
@@ -118,16 +109,13 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
 {{end}}
 
 {{define "admin"}}
-<h1>{{.T "sites"}}</h1>
-<p class="muted">{{.T "signed_in_as"}} {{.Email}}. {{.T "site_hint"}}</p>
+<p class="lead">{{.T "site_hint"}}</p>
 {{if .Error}}<p class="error" role="alert">{{.T .Error}}</p>{{end}}
-<form method="post" action="/admin/sites" hx-post="/admin/sites" hx-target="#sites" hx-swap="outerHTML">
-  <button type="submit">{{.T "create_site"}}</button>
-</form>
 {{template "site-list" .}}
-
-<h2>{{.T "tools_heading"}}</h2>
-<p class="muted"><code>create_site</code>, <code>put_file</code>, <code>delete_file</code>, <code>list_files</code>. {{.T "anon_rejected"}}</p>
+<section class="card">
+  <h2>{{.T "tools_heading"}}</h2>
+  <p class="muted"><code>create_site</code>, <code>put_file</code>, <code>delete_file</code>, <code>list_files</code>. {{.T "anon_rejected"}}</p>
+</section>
 {{end}}
 
 {{define "site-list"}}
@@ -148,11 +136,12 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
 {{end}}
 
 {{define "site"}}
-<p><a href="/admin">{{.T "all_sites"}}</a></p>
-<h1>{{.Site.Slug}}</h1>
-<p>{{.T "public_url"}}<br><a class="url" href="{{.Site.URL}}">{{.Site.URL}}</a></p>
-<p class="muted">{{.T "local_check"}}</p>
-<p><code>{{.Curl}}</code></p>
+<section class="card">
+  <h2>{{.T "public_url"}}</h2>
+  <a class="url" href="{{.Site.URL}}">{{.Site.URL}}</a>
+  <p class="muted">{{.T "local_check"}}</p>
+  <p class="cmd"><code>{{.Curl}}</code></p>
+</section>
 {{if .Error}}<p class="error" role="alert">{{.T .Error}}</p>{{end}}
 <form class="card" method="post" action="/admin/sites/{{.Site.Slug}}/files" enctype="multipart/form-data"
       hx-post="/admin/sites/{{.Site.Slug}}/files" hx-encoding="multipart/form-data" hx-target="#files" hx-swap="outerHTML">
