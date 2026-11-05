@@ -150,26 +150,27 @@ code {
 
 .shell {
   display: flex;
-  height: 100vh;
-  overflow: hidden;
+  align-items: flex-start;
+  min-height: 100vh;
+  background: var(--bg);
 }
 
 .sidebar {
   display: flex;
   flex: none;
   flex-direction: column;
+  align-self: flex-start;
   width: var(--rail);
-  height: 100vh;
   border-right: 1px solid var(--border);
   background: var(--surface);
 }
 .brand-row {
   display: flex;
   align-items: center;
-  height: 56px;
+  height: 48px;
   padding: 0 16px;
 }
-.sidebar nav { padding: 4px 12px 12px; }
+.sidebar nav { padding: 0 12px 4px; }
 .nav-item {
   display: flex;
   align-items: center;
@@ -234,54 +235,35 @@ code {
 .sign-out:hover { background: var(--bg); color: var(--primary); }
 
 .workspace {
-  display: flex;
   flex: 1;
-  flex-direction: column;
   min-width: 0;
-  height: 100vh;
-  padding: 12px;
-  overflow: auto;
+  padding: 16px 28px 32px;
   background: var(--bg);
 }
-.canvas {
-  display: flex;
-  flex: 1;
-  min-height: 100%;
-  padding: 0;
-}
+.canvas { padding: 0; }
 .studio {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
   width: 100%;
-  min-height: 100%;
-  padding: 20px 24px 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: #f9fafb;
-}
-.studio > .table-card {
-  flex: 1;
-  margin-bottom: 0;
+  max-width: 1200px;
 }
 
 .page-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .page-head h1 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  line-height: 28px;
+  line-height: 24px;
 }
 .subtitle {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 13px;
+  line-height: 18px;
 }
 .page-actions {
   display: flex;
@@ -309,7 +291,7 @@ code {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 168px;
+  height: 208px;
   padding: 16px 16px 0;
   border: 1px solid #eaecf0;
   border-radius: 12px;
@@ -330,10 +312,10 @@ code {
   display: grid;
   flex: none;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  font-size: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 18px;
   font-weight: 600;
 }
 .icon-0 { background: #eff4ff; color: #155eef; }
@@ -345,7 +327,7 @@ code {
 .app-name {
   overflow: hidden;
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -395,8 +377,8 @@ code {
   justify-content: center;
   gap: 6px;
   width: 100%;
-  height: 168px;
-  min-height: 168px;
+  height: 208px;
+  min-height: 208px;
   padding: 16px;
   border: 1px dashed #d0d5dd;
   border-radius: 12px;
