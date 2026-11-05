@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glincker/theauth-go/v2/crypto"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -81,6 +82,9 @@ func TestPublishFlow(t *testing.T) {
 	if res.StatusCode != http.StatusOK || !strings.Contains(body, "Create site") {
 		t.Fatalf("admin: %d %s", res.StatusCode, body)
 	}
+	if strings.Contains(body, "Create API token") || strings.Contains(body, "API token") {
+		t.Fatalf("token form still on admin page")
+	}
 
 	res = postForm(t, client, base+"/admin/sites", nil)
 	if res.StatusCode != http.StatusSeeOther {
@@ -115,30 +119,45 @@ func TestPublishFlow(t *testing.T) {
 		t.Fatalf("site host served admin: %q", adminOnSite)
 	}
 
-	res = postForm(t, client, base+"/admin/tokens", url.Values{"name": {"ci"}})
-	if res.StatusCode != http.StatusSeeOther {
-		t.Fatalf("token: %d %s", res.StatusCode, readAll(t, res))
-	}
-	loc := res.Header.Get("Location")
-	res.Body.Close()
-	res, err = client.Get(base + loc)
+	meta, err := http.Get(base + "/.well-known/oauth-protected-resource/mcp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	body = readAll(t, res)
-	tm := regexp.MustCompile(`id="new-token"[^>]*value="([^"]+)"`).FindStringSubmatch(body)
-	if tm == nil {
-		t.Fatalf("token not shown: %s", body)
+	metaBody := readAll(t, meta)
+	if meta.StatusCode != http.StatusOK || !strings.Contains(metaBody, `"authorization_servers"`) || !strings.Contains(metaBody, base) {
+		t.Fatalf("protected resource metadata: %d %s", meta.StatusCode, metaBody)
 	}
-	token := tm[1]
+	as, err := http.Get(base + "/.well-known/oauth-authorization-server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	asBody := readAll(t, as)
+	if as.StatusCode != http.StatusOK || !strings.Contains(asBody, "/oauth/token") || !strings.Contains(asBody, "/oauth/register") {
+		t.Fatalf("authorization server metadata: %d %s", as.StatusCode, asBody)
+	}
+
+	token := accessToken(t, client, base)
 
 	anon, err := http.Post(base+"/mcp", "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	anonBody := readAll(t, anon)
-	if anon.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("anonymous mcp: %d %s", anon.StatusCode, anonBody)
+	if anon.StatusCode != http.StatusUnauthorized || !strings.Contains(anon.Header.Get("WWW-Authenticate"), "resource_metadata") {
+		t.Fatalf("anonymous mcp: %d %s %q", anon.StatusCode, anonBody, anon.Header.Get("WWW-Authenticate"))
+	}
+	cookieReq, err := http.NewRequest(http.MethodPost, base+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookieReq.Header.Set("Content-Type", "application/json")
+	cookieRes, err := client.Do(cookieReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookieBody := readAll(t, cookieRes)
+	if cookieRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("session cookie mcp: %d %s", cookieRes.StatusCode, cookieBody)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -180,9 +199,6 @@ func TestPublishFlow(t *testing.T) {
 		t.Fatalf("outside file: %v", err)
 	}
 
-	cookieSession := connectMCP(t, ctx, base+"/mcp", &http.Client{Jar: jar})
-	defer cookieSession.Close()
-	callTool(t, ctx, cookieSession, "list_files", map[string]any{"slug": site.Slug})
 }
 
 type toolResult struct {
@@ -330,6 +346,92 @@ func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		base = http.DefaultTransport
 	}
 	return base.RoundTrip(r)
+}
+
+func accessToken(t *testing.T, client *http.Client, base string) string {
+	t.Helper()
+	const redirectURI = "http://127.0.0.1:1/callback"
+	regBody := `{"client_name":"test","redirect_uris":["` + redirectURI + `"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}`
+	req, err := http.NewRequest(http.MethodPost, base+"/oauth/register", strings.NewReader(regBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readAll(t, res)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("register: %d %s", res.StatusCode, body)
+	}
+	var reg struct {
+		ClientID string `json:"client_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &reg); err != nil || reg.ClientID == "" {
+		t.Fatalf("register body: %s", body)
+	}
+	verifier, err := crypto.NewCodeVerifier()
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {reg.ClientID},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {"publish"},
+		"state":                 {"st"},
+		"resource":              {base + "/mcp"},
+		"code_challenge":        {crypto.CodeChallenge(verifier)},
+		"code_challenge_method": {"S256"},
+	}
+	res, err = client.Get(base + "/oauth/authorize?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	locHeader := res.Header.Get("Location")
+	res.Body.Close()
+	if res.StatusCode != http.StatusFound {
+		t.Fatalf("authorize: %d location %q", res.StatusCode, locHeader)
+	}
+	loc, err := url.Parse(locHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := loc.Query().Get("code")
+	if code == "" || loc.Query().Get("state") != "st" {
+		t.Fatalf("authorize location %s", locHeader)
+	}
+	res = postForm(t, client, base+"/oauth/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {reg.ClientID},
+		"code":          {code},
+		"code_verifier": {verifier},
+		"redirect_uri":  {redirectURI},
+		"resource":      {base + "/mcp"},
+	})
+	body = readAll(t, res)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("token: %d %s", res.StatusCode, body)
+	}
+	var tok struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal([]byte(body), &tok); err != nil || tok.AccessToken == "" {
+		t.Fatalf("token body: %s", body)
+	}
+	return tok.AccessToken
+}
+
+func TestSafeOAuthNext(t *testing.T) {
+	if got := safeOAuthNext("/oauth/authorize?client_id=a"); got != "/oauth/authorize?client_id=a" {
+		t.Fatalf("next %q", got)
+	}
+	for _, bad := range []string{"https://evil.example/oauth/authorize", "//evil.example/oauth/authorize", "/admin", "/oauth/../admin", ""} {
+		if got := safeOAuthNext(bad); got != "" {
+			t.Fatalf("%q -> %q", bad, got)
+		}
+	}
 }
 
 func connectMCP(t *testing.T, ctx context.Context, endpoint string, httpClient *http.Client) *mcp.ClientSession {

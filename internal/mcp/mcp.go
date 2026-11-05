@@ -12,20 +12,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caidesen/mcp-static-deploy/internal/auth"
 	"github.com/caidesen/mcp-static-deploy/internal/sites"
-	"github.com/glincker/theauth-go/v2"
+	"github.com/glincker/theauth-go/mcpresource"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Handler is the Streamable HTTP MCP endpoint. Callers must wrap it with
-// theauth so anonymous requests never reach the tools.
-func Handler(a *theauth.TheAuth, st *sites.Store, baseURL, baseDomain string, disableLocalhost bool) http.Handler {
+// the OAuth bearer validator so anonymous requests never reach the tools.
+func Handler(st *sites.Store, baseURL, baseDomain string, disableLocalhost bool, tokens *mcpresource.Validator) http.Handler {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{
 		Name:    "static-publish",
 		Version: "0.1.0",
 	}, nil)
-	svc := &tools{auth: a, sites: st, baseURL: baseURL, baseDomain: baseDomain}
+	svc := &tools{tokens: tokens, sites: st, baseURL: baseURL, baseDomain: baseDomain}
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "create_site",
 		Description: "Create a static site you own. Returns a random slug and its public URL.",
@@ -57,7 +56,7 @@ func Handler(a *theauth.TheAuth, st *sites.Store, baseURL, baseDomain string, di
 }
 
 type tools struct {
-	auth       *theauth.TheAuth
+	tokens     *mcpresource.Validator
 	sites      *sites.Store
 	baseURL    string
 	baseDomain string
@@ -162,11 +161,11 @@ func (t *tools) listFiles(ctx context.Context, req *mcpsdk.CallToolRequest, in l
 	return nil, out, nil
 }
 
-// owner re-reads the credential on this HTTP request. RequireAbility already
-// rejected anonymous callers; this binds the write to the user on the request
+// owner re-reads the bearer token on this HTTP request. The middleware already
+// rejected anonymous callers; this binds the write to the token subject
 // rather than to whoever opened the MCP session.
 func (t *tools) owner(ctx context.Context, req *mcpsdk.CallToolRequest) (string, error) {
-	if req != nil && req.Extra != nil && len(req.Extra.Header) > 0 {
+	if req != nil && req.Extra != nil && len(req.Extra.Header) > 0 && t.tokens != nil {
 		httpReq := &http.Request{
 			Method:     http.MethodPost,
 			URL:        &url.URL{Path: "/mcp"},
@@ -175,14 +174,20 @@ func (t *tools) owner(ctx context.Context, req *mcpsdk.CallToolRequest) (string,
 			RemoteAddr: "127.0.0.1:1",
 		}
 		rec := httptest.NewRecorder()
-		_, p, ok := t.auth.AuthenticatePrincipal(rec, httpReq)
-		if !ok || p == nil || !p.Has(auth.AbilityPublish) {
-			return "", errors.New("authentication required")
+		var subject string
+		t.tokens.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if p, ok := mcpresource.PrincipalFromContext(r.Context()); ok {
+				subject = p.Subject
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})).ServeHTTP(rec, httpReq)
+		if subject != "" && rec.Code == http.StatusNoContent {
+			return subject, nil
 		}
-		return p.UserID.String(), nil
+		return "", errors.New("authentication required")
 	}
-	if p, ok := theauth.PrincipalFromContext(ctx); ok && p.Has(auth.AbilityPublish) {
-		return p.UserID.String(), nil
+	if p, ok := mcpresource.PrincipalFromContext(ctx); ok && p.Subject != "" {
+		return p.Subject, nil
 	}
 	return "", errors.New("authentication required")
 }

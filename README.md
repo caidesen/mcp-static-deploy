@@ -88,9 +88,26 @@ Replacing a file uploads the same path again. Delete removes that file only. The
 
 ## Publish from MCP
 
-On the admin page, create an API token. The secret is shown once and expires in 90 days. It has the `publish` ability.
+`/mcp` is Streamable HTTP. It accepts only an OAuth access token: `Authorization: Bearer` with a JWT whose audience is `{BASE_URL}/mcp`. A browser session does not authorize MCP. Anonymous calls are rejected.
 
-`/mcp` is Streamable HTTP. Anonymous requests are rejected. A session cookie or `Authorization: Bearer <token>` is accepted (`RequireAbility`). Agents should send the bearer token.
+This process is the authorization server. Clients discover it from `GET /.well-known/oauth-protected-resource/mcp`, which points at `GET /.well-known/oauth-authorization-server`.
+
+Registration is open. An MCP client registers itself with `POST /oauth/register` (one redirect URI, a public client, PKCE S256). There is no registration token to create. The person signs in with email and password when the browser is sent to `/`, then the client finishes the authorization-code exchange at `POST /oauth/token`. Request the `publish` scope. Loopback `http://127.0.0.1` redirect URIs are accepted, including a changing port.
+
+Mounted OAuth routes:
+
+- `GET /.well-known/oauth-authorization-server`
+- `GET /.well-known/openid-configuration`
+- `GET /.well-known/oauth-protected-resource`
+- `GET /.well-known/oauth-protected-resource/mcp`
+- `GET /oauth/jwks`
+- `GET /oauth/authorize`
+- `POST /oauth/token`
+- `POST /oauth/revoke`
+- `POST /oauth/introspect`
+- `POST /oauth/register`
+
+The signing key is sealed with `DATA_DIR/oauth-encryption.key`, created on first boot. Keep that file with the database.
 
 Tools:
 
@@ -121,5 +138,5 @@ The apex host (`localhost`, or `127.0.0.1` when that is how you connect) serves 
 - `storage/sqlite` v0.3.0 is built for theauth-go v2.11.0. Newer theauth releases add storage methods this SQLite adapter does not implement, so the module is pinned to v2.11.0.
 - Signup closes after the first user.
 - There is no DNS or certificate automation. Point `*.BASE_DOMAIN` at this process yourself.
-- When `BASE_DOMAIN` is not a localhost name, the MCP SDK's loopback Host check is turned off so a reverse proxy on `127.0.0.1` can forward the public `Host`. Calls still require a session or API token.
+- When `BASE_DOMAIN` is not a localhost name, the MCP SDK's loopback Host check is turned off so a reverse proxy on `127.0.0.1` can forward the public `Host`. Calls still require an OAuth access token for this MCP resource.
 - Uploads are limited to 8 MiB.

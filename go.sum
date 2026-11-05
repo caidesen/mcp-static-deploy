@@ -15,10 +15,6 @@ github.com/glincker/theauth-go/storage/sqlite v0.3.0 h1:9uaDuamd5+yvZJKWUhLvx1bj
 github.com/glincker/theauth-go/storage/sqlite v0.3.0/go.mod h1:uTuvMyiwaFPo60+7tIXHQJ4Kb43NGjTsBHS7QqG/A5g=
 github.com/glincker/theauth-go/v2 v2.11.0 h1:haLOF4sAabP6PdlXfourfs3ZgWKb9puYZwoM62EWVEk=
 github.com/glincker/theauth-go/v2 v2.11.0/go.mod h1:xnytzvPmg6WaSGflOsCgo82kacb17DDoAPVKV2y3j3I=
-github.com/glincker/theauth-go/v2 v2.12.1 h1:Ir93a/6gFjdtjh4NvGXwsIO82a/8MrNauaH/236cY5s=
-github.com/glincker/theauth-go/v2 v2.12.1/go.mod h1:xnytzvPmg6WaSGflOsCgo82kacb17DDoAPVKV2y3j3I=
-github.com/glincker/theauth-go/v2 v2.13.0 h1:o1NbaKlRMeFIxSoezvJUNdGNNAbOO/Opy5mQB2NRjRw=
-github.com/glincker/theauth-go/v2 v2.13.0/go.mod h1:xnytzvPmg6WaSGflOsCgo82kacb17DDoAPVKV2y3j3I=
 github.com/go-chi/chi/v5 v5.5.0 h1:xdKQ1dJmVJsmgahrXSKhUx8NyVPzpwdlyrrQFpMPJgg=
 github.com/go-chi/chi/v5 v5.5.0/go.mod h1:d1IG7GtKPSjPyBP365PH8sAGVHk3qfB/IhjFNRH1wWM=
 github.com/go-webauthn/webauthn v0.13.4 h1:q68qusWPcqHbg9STSxBLBHnsKaLxNO0RnVKaAqMuAuQ=

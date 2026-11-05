@@ -3,9 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"html/template"
@@ -16,12 +14,11 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/caidesen/mcp-static-deploy/internal/auth"
 	"github.com/caidesen/mcp-static-deploy/internal/mcp"
 	"github.com/caidesen/mcp-static-deploy/internal/sites"
+	"github.com/glincker/theauth-go/mcpresource"
 	"github.com/glincker/theauth-go/v2"
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
@@ -96,7 +93,6 @@ type server struct {
 	cfg        Config
 	origin     string
 	tmpl       *template.Template
-	flashes    *flashBox
 	baseDomain string
 }
 
@@ -119,7 +115,6 @@ func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, err
 		cfg:        cfg,
 		origin:     auth.Origin(cfg.BaseURL),
 		tmpl:       tmpl,
-		flashes:    newFlashBox(),
 		baseDomain: cfg.BaseDomain,
 	}
 	e.Use(echomw.Recover())
@@ -145,16 +140,19 @@ func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, err
 	admin.GET("/sites/:slug", s.sitePage)
 	admin.POST("/sites/:slug/files", s.upload)
 	admin.POST("/sites/:slug/files/delete", s.deleteFile)
-	admin.POST("/tokens", s.createToken)
 
-	// Official echo example: mount theauth on chi, then echo.WrapHandler.
-	// Mount registers routes under /auth/, and the request path is unchanged.
-	e.Any("/auth/*", echo.WrapHandler(app.Routes))
+	// theauth mounts session routes under /auth/ and the authorization server
+	// at /.well-known and /oauth. Echo forwards those paths unchanged.
+	routes := echo.WrapHandler(app.Routes)
+	e.Any("/auth/*", routes)
+	e.Any("/oauth/*", routes)
+	e.Any("/.well-known/*", routes)
 
+	issuer := strings.TrimRight(cfg.BaseURL, "/")
+	tokens := mcpresource.New(issuer+"/mcp", mcpresource.WithJWKS(issuer+"/oauth/jwks"))
 	localDomain := cfg.BaseDomain == "localhost" || strings.HasSuffix(cfg.BaseDomain, ".localhost")
-	mcpHandler := mcp.Handler(app.Auth, store, cfg.BaseURL, cfg.BaseDomain, !localDomain)
-	protected := app.Auth.RequireAbility(auth.AbilityPublish)(mcpHandler)
-	e.Any("/mcp", echo.WrapHandler(protected))
+	mcpHandler := mcp.Handler(store, cfg.BaseURL, cfg.BaseDomain, !localDomain, tokens)
+	e.Any("/mcp", echo.WrapHandler(tokens.Middleware(mcpHandler)))
 
 	return &appHandler{server: s}, nil
 }
@@ -202,7 +200,11 @@ func (s *server) requireUser(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func (s *server) home(c echo.Context) error {
+	next := safeOAuthNext(c.QueryParam("next"))
 	if _, ok := theauth.UserFromContext(c.Request().Context()); ok {
+		if next != "" {
+			return c.Redirect(http.StatusSeeOther, next)
+		}
 		return c.Redirect(http.StatusSeeOther, "/admin")
 	}
 	needs, err := s.needsSetup(c.Request().Context())
@@ -213,6 +215,7 @@ func (s *server) home(c echo.Context) error {
 		View:       "login",
 		NeedsSetup: needs,
 		BaseURL:    s.cfg.BaseURL,
+		Next:       next,
 	})
 }
 
@@ -271,7 +274,11 @@ func (s *server) logout(c echo.Context) error {
 
 func (s *server) finishAuth(c echo.Context, rec *httptest.ResponseRecorder, setup bool) error {
 	copyCookies(c.Response(), rec.Result())
+	next := safeOAuthNext(c.FormValue("next"))
 	if rec.Code/100 == 2 {
+		if next != "" {
+			return c.Redirect(http.StatusSeeOther, next)
+		}
 		return c.Redirect(http.StatusSeeOther, "/admin")
 	}
 	needs := setup
@@ -287,6 +294,7 @@ func (s *server) finishAuth(c echo.Context, rec *httptest.ResponseRecorder, setu
 		NeedsSetup: needs,
 		Error:      authErrorKey(rec.Body.Bytes()),
 		BaseURL:    s.cfg.BaseURL,
+		Next:       next,
 	})
 }
 
@@ -294,11 +302,6 @@ func (s *server) admin(c echo.Context) error {
 	data, err := s.adminData(c)
 	if err != nil {
 		return err
-	}
-	if id := c.QueryParam("issued"); id != "" {
-		if user, ok := theauth.UserFromContext(c.Request().Context()); ok {
-			data.NewToken = s.flashes.take(id, user.ID.String())
-		}
 	}
 	return s.render(c, http.StatusOK, "layout", data)
 }
@@ -377,31 +380,6 @@ func (s *server) deleteFile(c echo.Context) error {
 	return c.Redirect(http.StatusSeeOther, "/admin/sites/"+url.PathEscape(slug))
 }
 
-func (s *server) createToken(c echo.Context) error {
-	user, _ := theauth.UserFromContext(c.Request().Context())
-	name := strings.TrimSpace(c.FormValue("name"))
-	if name == "" {
-		name = "agent"
-	}
-	secret, _, err := s.auth.Auth.MintAPIToken(c.Request().Context(), theauth.MintAPITokenInput{
-		OwnerID:   user.ID,
-		OwnerKind: theauth.OwnerKindUser,
-		Name:      name,
-		Abilities: []string{auth.AbilityPublish},
-		TTL:       90 * 24 * time.Hour,
-	})
-	if err != nil {
-		data, derr := s.adminData(c)
-		if derr != nil {
-			return derr
-		}
-		data.Error = "err_token"
-		return s.render(c, http.StatusBadRequest, "layout", data)
-	}
-	id := s.flashes.put(user.ID.String(), secret)
-	return c.Redirect(http.StatusSeeOther, "/admin?issued="+id)
-}
-
 func (s *server) siteError(c echo.Context, slug, key string) error {
 	data, err := s.siteData(c, slug)
 	if err != nil {
@@ -428,32 +406,11 @@ func (s *server) adminData(c echo.Context) (viewData, error) {
 			Created: site.CreatedAt.Format("2006-01-02 15:04 UTC"),
 		})
 	}
-	tokens, err := s.auth.Auth.ListAPITokens(c.Request().Context(), user.ID)
-	if err != nil {
-		return viewData{}, err
-	}
-	now := time.Now()
-	var tokenRows []tokenRow
-	for _, tok := range tokens {
-		if !tok.Usable(now) {
-			continue
-		}
-		exp := ""
-		if tok.ExpiresAt != nil {
-			exp = tok.ExpiresAt.UTC().Format("2006-01-02")
-		}
-		tokenRows = append(tokenRows, tokenRow{Name: tok.Name, Hint: tok.Hint, Expires: exp})
-	}
-	if tokenRows == nil {
-		tokenRows = []tokenRow{}
-	}
 	return viewData{
 		View:    "admin",
 		Email:   user.Email,
 		BaseURL: s.cfg.BaseURL,
-		MCPURL:  strings.TrimRight(s.cfg.BaseURL, "/") + "/mcp",
 		Sites:   rows,
-		Tokens:  tokenRows,
 	}, nil
 }
 
@@ -570,13 +527,11 @@ type viewData struct {
 	NeedsSetup bool
 	Error      string
 	BaseURL    string
-	MCPURL     string
+	Next       string
 	Sites      []siteRow
 	Site       siteRow
 	HasSite    bool
 	Files      []fileRow
-	Tokens     []tokenRow
-	NewToken   string
 	Curl       string
 }
 
@@ -591,43 +546,22 @@ type fileRow struct {
 	Size int64
 }
 
-type tokenRow struct {
-	Name    string
-	Hint    string
-	Expires string
-}
-
-type flashItem struct {
-	UserID string
-	Secret string
-}
-
-type flashBox struct {
-	mu sync.Mutex
-	m  map[string]flashItem
-}
-
-func newFlashBox() *flashBox {
-	return &flashBox{m: map[string]flashItem{}}
-}
-
-func (f *flashBox) put(userID, secret string) string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	id := hex.EncodeToString(b[:])
-	f.mu.Lock()
-	f.m[id] = flashItem{UserID: userID, Secret: secret}
-	f.mu.Unlock()
-	return id
-}
-
-func (f *flashBox) take(id, userID string) string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	item, ok := f.m[id]
-	if !ok || item.UserID != userID {
+// safeOAuthNext allows the browser to resume /oauth/authorize after sign-in.
+// Anything else, including other hosts, is dropped.
+func safeOAuthNext(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.ContainsAny(raw, "\\\r\n") {
 		return ""
 	}
-	delete(f.m, id)
-	return item.Secret
+	u, err := url.Parse(raw)
+	if err != nil || u.IsAbs() || u.Host != "" || u.User != nil {
+		return ""
+	}
+	if !strings.HasPrefix(u.Path, "/oauth/") || strings.Contains(u.Path, "..") || strings.HasPrefix(u.Path, "//") {
+		return ""
+	}
+	if u.RawQuery == "" {
+		return u.Path
+	}
+	return u.Path + "?" + u.RawQuery
 }

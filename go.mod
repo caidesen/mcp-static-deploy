@@ -3,6 +3,7 @@ module github.com/caidesen/mcp-static-deploy
 go 1.26.0
 
 require (
+	github.com/glincker/theauth-go/mcpresource v0.2.0
 	github.com/glincker/theauth-go/storage/sqlite v0.3.0
 	github.com/glincker/theauth-go/v2 v2.11.0
 	github.com/go-chi/chi/v5 v5.5.0

@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,8 +18,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// AbilityPublish is the ability a session or API token needs to publish sites.
-const AbilityPublish = "publish"
+// PublishScope is the OAuth scope an MCP access token needs to publish sites.
+const PublishScope = "publish"
 
 // App is the theauth instance and the chi routes mounted at /auth/.
 type App struct {
@@ -45,9 +47,10 @@ func Open(ctx context.Context, opt Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	// One connection keeps WAL writers from tripping over each other in-process.
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// A small pool: MCP validation fetches /oauth/jwks on this same process
+	// while a request is in flight, and that handler also uses SQLite.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite ping: %w", err)
@@ -62,6 +65,12 @@ func Open(ctx context.Context, opt Options) (*App, error) {
 		return nil, err
 	}
 	secure := strings.HasPrefix(strings.ToLower(opt.BaseURL), "https://")
+	key, err := encryptionKey(opt.DataDir)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	issuer := strings.TrimRight(opt.BaseURL, "/")
 	a, err := theauth.New(theauth.Config{
 		CoreStorage: store,
 		BaseURL:     opt.BaseURL,
@@ -71,14 +80,23 @@ func Open(ctx context.Context, opt Options) (*App, error) {
 		SecureCookie:                  secure,
 		SuppressSecureCookieWarning:   !secure,
 		SuppressTrustedProxiesWarning: true,
+		EncryptionKey:                 key,
 		Bootstrap: &theauth.BootstrapConfig{
 			SetupToken: opt.SetupToken,
 		},
-		APITokens: &theauth.APITokensConfig{
-			Abilities: []string{AbilityPublish},
-			UserAbilities: func(context.Context, *theauth.User) ([]string, error) {
-				return []string{AbilityPublish}, nil
+		AuthorizationServer: &theauth.AuthorizationServerConfig{
+			Issuer:                     issuer,
+			AllowAnonymousRegistration: true,
+			LoginURL:                   "/",
+			ClientCompat: theauth.ClientCompatConfig{
+				OptionalResource: true,
+				LoopbackAnyPort:  true,
+				PathAudience:     true,
 			},
+			Resources: []theauth.ProtectedResource{{
+				Identifier: issuer + "/mcp",
+				Scopes:     []string{PublishScope},
+			}},
 		},
 	})
 	if err != nil {
@@ -114,6 +132,30 @@ func Origin(baseURL string) string {
 type discardMail struct{}
 
 func (discardMail) Send(context.Context, string, string, string) error { return nil }
+
+// encryptionKey is the 32-byte key that seals the authorization server's
+// signing key. It stays in the data directory and is created on first boot.
+func encryptionKey(dir string) ([]byte, error) {
+	path := filepath.Join(dir, "oauth-encryption.key")
+	b, err := os.ReadFile(path)
+	if err == nil {
+		if len(b) != 32 {
+			return nil, fmt.Errorf("oauth encryption key must be 32 bytes")
+		}
+		return b, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	b = make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
 
 func sqliteDSN(path string) string {
 	// modernc.org/sqlite applies _pragma on every connection. Foreign keys

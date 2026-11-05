@@ -95,6 +95,7 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
 {{if .NeedsSetup}}
 <p class="muted">{{.T "setup_before"}} <code>SETUP_TOKEN</code>{{.T "setup_after"}}</p>
 <form class="card" method="post" action="/signup">
+  {{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
   <label for="email">{{.T "email"}}</label>
   <input id="email" name="email" type="email" autocomplete="username" required>
   <label for="password">{{.T "password"}}</label>
@@ -106,6 +107,7 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
 {{else}}
 <p class="muted">{{.T "sign_in_lead"}}</p>
 <form class="card" method="post" action="/login">
+  {{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
   <label for="email">{{.T "email"}}</label>
   <input id="email" name="email" type="email" autocomplete="username" required>
   <label for="password">{{.T "password"}}</label>
@@ -123,27 +125,6 @@ code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.
   <button type="submit">{{.T "create_site"}}</button>
 </form>
 {{template "site-list" .}}
-
-<h2>{{.T "api_token_heading"}}</h2>
-<p class="muted">{{.T "mcp_before"}} <code>{{.MCPURL}}</code> {{.T "mcp_after_url"}} <code>Authorization: Bearer</code> {{.T "mcp_after_auth"}} <code>publish</code> {{.T "mcp_after_ability"}}</p>
-{{if .NewToken}}
-<div class="card">
-  <p>{{.T "copy_token"}}</p>
-  <input id="new-token" class="secret" readonly value="{{.NewToken}}">
-</div>
-{{end}}
-<form class="card" method="post" action="/admin/tokens">
-  <label for="token-name">{{.T "token_name"}}</label>
-  <input id="token-name" name="name" type="text" value="agent" maxlength="120" required>
-  <button type="submit">{{.T "create_token"}}</button>
-</form>
-{{if .Tokens}}
-<ul class="files">
-{{range .Tokens}}
-<li><span>{{.Name}} <span class="muted">{{.Hint}} · {{$.T "until"}} {{.Expires}}</span></span></li>
-{{end}}
-</ul>
-{{end}}
 
 <h2>{{.T "tools_heading"}}</h2>
 <p class="muted"><code>create_site</code>, <code>put_file</code>, <code>delete_file</code>, <code>list_files</code>. {{.T "anon_rejected"}}</p>
