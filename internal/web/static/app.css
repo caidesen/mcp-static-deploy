@@ -194,10 +194,10 @@ code {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 52px;
-  margin-top: auto;
-  padding: 0 12px;
-  border-top: 1px solid var(--border);
+  height: 44px;
+  margin: 0 12px;
+  padding: 0 8px;
+  border-radius: 8px;
 }
 .avatar {
   display: grid;
@@ -234,16 +234,35 @@ code {
 .sign-out:hover { background: var(--bg); color: var(--primary); }
 
 .workspace {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
+  height: 100vh;
+  padding: 12px;
   overflow: auto;
   background: var(--bg);
 }
 .canvas {
-  padding: 24px 32px 32px;
+  display: flex;
+  flex: 1;
+  min-height: 100%;
+  padding: 0;
 }
 .studio {
-  max-width: 1200px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+  padding: 20px 24px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f9fafb;
+}
+.studio > .table-card {
+  flex: 1;
+  margin-bottom: 0;
 }
 
 .page-head {
@@ -496,39 +515,69 @@ tr:last-child td { border-bottom: 0; }
 
 .auth-shell {
   display: grid;
+  grid-template-columns: minmax(480px, 1.05fr) minmax(440px, 0.95fr);
   min-height: 100vh;
-  place-items: center;
-  padding: 32px 16px;
-  background: var(--bg);
+  background: #fff;
 }
-.auth-card {
+.auth-aside {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.2), transparent 36%),
+    linear-gradient(165deg, #155eef 0%, #0040c1 100%);
+  color: #fff;
+}
+.auth-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+.auth-hero-mark {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+  background:
+    linear-gradient(#fff, #fff) 18px 18px / 22px 22px no-repeat,
+    linear-gradient(rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.78)) 48px 18px / 22px 22px no-repeat,
+    linear-gradient(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.55)) 18px 48px / 22px 22px no-repeat,
+    linear-gradient(rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.32)) 48px 48px / 22px 22px no-repeat,
+    rgba(255, 255, 255, 0.14);
+}
+.auth-hero p {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.auth-main {
   position: relative;
-  width: min(400px, 100%);
-  padding: 28px 28px 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+  background: #fff;
 }
 .auth-lang {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 24px;
+  right: 28px;
 }
-.auth-brand { display: flex; justify-content: center; margin-top: 8px; }
-.auth-card h1 {
-  margin: 16px 0 8px;
-  font-size: 22px;
+.auth-block { width: min(360px, 100%); }
+.auth-brand { margin: 0 0 4px; }
+.auth-block h1 {
+  margin: 8px 0 20px;
+  font-size: 24px;
   font-weight: 600;
   line-height: 1.3;
-  text-align: center;
+  text-align: left;
 }
-.auth-card .muted { margin: 0 0 16px; font-size: 13px; text-align: center; }
-.auth-card input { height: 40px; }
-.auth-card form button.primary {
+.auth-block input { height: 40px; }
+.auth-block form button.primary {
   width: 100%;
   height: 40px;
-  margin-top: 20px;
+  margin-top: 16px;
 }
 
 @media (max-width: 760px) {
@@ -536,7 +585,9 @@ tr:last-child td { border-bottom: 0; }
   .sidebar { width: 100%; height: auto; }
   .account { margin-top: 0; }
   .workspace { overflow: visible; }
-  .canvas { padding: 16px; }
+  .auth-shell { grid-template-columns: 1fr; }
+  .auth-aside { min-height: 200px; }
+  .canvas { padding: 0; }
   .page-head { flex-direction: column; }
   .app-grid { grid-template-columns: 1fr; }
   .metrics { grid-template-columns: 1fr; }

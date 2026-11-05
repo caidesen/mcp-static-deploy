@@ -10,11 +10,19 @@
 <body>
 {{if eq .View "login"}}
 <div class="auth-shell">
-  <div class="auth-card">
+  <aside class="auth-aside">
+    <div class="auth-hero">
+      <span class="auth-hero-mark" aria-hidden="true"></span>
+      <p>{{.T "brand"}}</p>
+    </div>
+  </aside>
+  <section class="auth-main">
     <div class="auth-lang">{{template "lang" .}}</div>
-    <div class="auth-brand">{{template "logo" .}}</div>
-    {{template "login" .}}
-  </div>
+    <div class="auth-block">
+      <div class="auth-brand">{{template "logo" .}}</div>
+      {{template "login" .}}
+    </div>
+  </section>
 </div>
 {{else}}
 <div class="shell">
@@ -74,7 +82,6 @@ document.addEventListener("click", function (e) {
 <h1>{{if .NeedsSetup}}{{.T "create_account"}}{{else}}{{.T "sign_in"}}{{end}}</h1>
 {{if .Error}}<p class="error" role="alert">{{.T .Error}}</p>{{end}}
 {{if .NeedsSetup}}
-<p class="muted">{{.T "setup_before"}} <code>SETUP_TOKEN</code>{{.T "setup_after"}}</p>
 <form method="post" action="/signup">
   {{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
   <label for="email">{{.T "email"}}</label>
@@ -86,7 +93,6 @@ document.addEventListener("click", function (e) {
   <button class="primary" type="submit">{{.T "create_account_btn"}}</button>
 </form>
 {{else}}
-<p class="muted">{{.T "sign_in_lead"}}</p>
 <form method="post" action="/login">
   {{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
   <label for="email">{{.T "email"}}</label>
