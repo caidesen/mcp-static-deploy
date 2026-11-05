@@ -1,0 +1,6 @@
+/data/
+/server
+*.db
+*.db-wal
+*.db-shm
+*.db-journal

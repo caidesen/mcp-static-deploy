@@ -1,0 +1,194 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · static publish</title>
+<script src="/static/htmx.min.js"></script>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+  background: #f4f1ea;
+  color: #1c1917;
+}
+header, main { width: min(42rem, calc(100% - 2rem)); margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: baseline; padding: 1.25rem 0 0.5rem; }
+header a { color: inherit; text-decoration: none; font-weight: 650; }
+header form { margin: 0; }
+main { padding-bottom: 3rem; }
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 0.4rem 0 0.8rem; }
+h2 { font-size: 1.05rem; margin: 1.6rem 0 0.5rem; }
+a { color: #0f5c56; }
+.card, form.card, .note {
+  background: #fff;
+  border: 1px solid #e4dfd4;
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  margin: 0.75rem 0;
+}
+label { display: block; font-size: 0.85rem; margin: 0.7rem 0 0.25rem; }
+input[type="email"], input[type="password"], input[type="text"], input[type="file"] {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #d6d0c4;
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+}
+button, .button {
+  display: inline-block;
+  margin-top: 0.8rem;
+  background: #0f5c56;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.45rem 0.8rem;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+button.quiet, button.danger { background: #fff; color: #1c1917; border: 1px solid #d6d0c4; }
+button.danger { color: #9f1239; }
+.error { color: #9f1239; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 0.5rem 0.7rem; }
+.secret { font-family: ui-monospace, monospace; width: 100%; }
+.files { list-style: none; padding: 0; margin: 0; }
+.files li { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: 0.35rem 0; border-top: 1px solid #f0ebe3; }
+.files form { margin: 0; }
+.muted { color: #57534e; font-size: 0.92rem; }
+code, .url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92rem; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/admin">Static publish</a>
+  {{if .Email}}
+  <form method="post" action="/logout"><button class="quiet" type="submit">Sign out</button></form>
+  {{end}}
+</header>
+<main>
+{{if eq .View "login"}}{{template "login" .}}{{end}}
+{{if eq .View "admin"}}{{template "admin" .}}{{end}}
+{{if eq .View "site"}}{{template "site" .}}{{end}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "login"}}
+<h1>{{.Title}}</h1>
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{if .NeedsSetup}}
+<p class="muted">The first account is created with the setup token from <code>SETUP_TOKEN</code>. Password must be at least 12 characters. Later sign-ins use email and password. Magic-link and password-reset email is not delivered.</p>
+<form class="card" method="post" action="/signup">
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email" autocomplete="username" required>
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+  <label for="setup_token">Setup token</label>
+  <input id="setup_token" name="setup_token" type="password" autocomplete="off" required>
+  <button type="submit">Create account</button>
+</form>
+{{else}}
+<p class="muted">Sign in with email and password. Magic-link email is not sent.</p>
+<form class="card" method="post" action="/login">
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email" autocomplete="username" required>
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required>
+  <button type="submit">Sign in</button>
+</form>
+{{end}}
+{{end}}
+
+{{define "admin"}}
+<h1>Sites</h1>
+<p class="muted">Signed in as {{.Email}}. Creating a site gives it a public URL on its own subdomain.</p>
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+<form method="post" action="/admin/sites" hx-post="/admin/sites" hx-target="#sites" hx-swap="outerHTML">
+  <button type="submit">Create site</button>
+</form>
+{{template "site-list" .}}
+
+<h2>API token for MCP</h2>
+<p class="muted">Agents call <code>{{.MCPURL}}</code> with <code>Authorization: Bearer</code> and the token below. A browser session cookie is also accepted. The token can publish with the <code>publish</code> ability and expires in 90 days. The secret is shown once.</p>
+{{if .NewToken}}
+<div class="card">
+  <p>Copy this token now. It will not be shown again.</p>
+  <input id="new-token" class="secret" readonly value="{{.NewToken}}">
+</div>
+{{end}}
+<form class="card" method="post" action="/admin/tokens">
+  <label for="token-name">Token name</label>
+  <input id="token-name" name="name" type="text" value="agent" maxlength="120" required>
+  <button type="submit">Create API token</button>
+</form>
+{{if .Tokens}}
+<ul class="files">
+{{range .Tokens}}
+<li><span>{{.Name}} <span class="muted">{{.Hint}} · until {{.Expires}}</span></span></li>
+{{end}}
+</ul>
+{{end}}
+
+<h2>Tools</h2>
+<p class="muted"><code>create_site</code>, <code>put_file</code>, <code>delete_file</code>, <code>list_files</code>. Anonymous calls are rejected.</p>
+{{end}}
+
+{{define "site-list"}}
+<div id="sites" class="card">
+{{if .Sites}}
+<ul class="files">
+{{range .Sites}}
+<li>
+  <span><a href="/admin/sites/{{.Slug}}">{{.Slug}}</a><br><a class="url" href="{{.URL}}">{{.URL}}</a></span>
+  <span class="muted">{{.Created}}</span>
+</li>
+{{end}}
+</ul>
+{{else}}
+<p class="muted">No sites yet.</p>
+{{end}}
+</div>
+{{end}}
+
+{{define "site"}}
+<p><a href="/admin">All sites</a></p>
+<h1>{{.Site.Slug}}</h1>
+<p>Public URL<br><a class="url" href="{{.Site.URL}}">{{.Site.URL}}</a></p>
+<p class="muted">Local check, without DNS:</p>
+<p><code>{{.Curl}}</code></p>
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+<form class="card" method="post" action="/admin/sites/{{.Site.Slug}}/files" enctype="multipart/form-data"
+      hx-post="/admin/sites/{{.Site.Slug}}/files" hx-encoding="multipart/form-data" hx-target="#files" hx-swap="outerHTML">
+  <label for="file">File</label>
+  <input id="file" name="file" type="file" required>
+  <label for="path">Path (optional, defaults to the file name)</label>
+  <input id="path" name="path" type="text" placeholder="index.html" autocomplete="off">
+  <button type="submit">Upload</button>
+</form>
+{{template "file-list" .}}
+{{end}}
+
+{{define "file-list"}}
+<div id="files" class="card">
+{{if .Files}}
+<ul class="files">
+{{range .Files}}
+<li>
+  <span><code>{{.Path}}</code> <span class="muted">{{.Size}} bytes</span></span>
+  <form method="post" action="/admin/sites/{{$.Site.Slug}}/files/delete"
+        hx-post="/admin/sites/{{$.Site.Slug}}/files/delete" hx-target="#files" hx-swap="outerHTML">
+    <input type="hidden" name="path" value="{{.Path}}">
+    <button class="danger" type="submit">Delete</button>
+  </form>
+</li>
+{{end}}
+</ul>
+{{else}}
+<p class="muted">No files yet. Upload <code>index.html</code> to give the site a front page.</p>
+{{end}}
+</div>
+{{end}}
