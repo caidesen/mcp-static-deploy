@@ -1,4 +1,4 @@
-import { Button } from "@base-ui/react/button";
+import { Menu } from "@base-ui/react/menu";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -26,12 +26,20 @@ export function Shell({ session, children }: { session: Session; children: React
           </Link>
           <div className="topbar-actions">
             <LangSwitch lang={session.lang} label={t("language")} />
-            <span className="account-email" title={session.email}>
-              {session.email}
-            </span>
-            <Button type="button" className="sign-out" disabled={logout.isPending} onClick={() => logout.mutate()}>
-              {t("sign_out")}
-            </Button>
+            <Menu.Root>
+              <Menu.Trigger className="account-trigger" disabled={logout.isPending}>
+                {session.email}
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Positioner className="menu-positioner" side="bottom" align="end" sideOffset={8}>
+                  <Menu.Popup className="menu-popup">
+                    <Menu.Item className="menu-item" onClick={() => logout.mutate()}>
+                      {t("sign_out")}
+                    </Menu.Item>
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
           </div>
         </div>
       </header>

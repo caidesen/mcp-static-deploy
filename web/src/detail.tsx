@@ -1,4 +1,5 @@
 import { Button } from "@base-ui/react/button";
+import { Dialog } from "@base-ui/react/dialog";
 import { Field } from "@base-ui/react/field";
 import { Form } from "@base-ui/react/form";
 import { Input } from "@base-ui/react/input";
@@ -6,13 +7,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, api, type Session, type SiteDetail } from "./api";
-import { CopyButton } from "./sites";
+import { CopyMenu } from "./sites";
 
 export function DetailPage({ session }: { session: Session }) {
   const t = (key: string) => session.messages[key] ?? key;
   const { slug = "" } = useParams();
   const queryClient = useQueryClient();
   const [error, setError] = useState("");
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
   const detail = useQuery({
     queryKey: ["site", slug],
     queryFn: () => api<SiteDetail>(`/api/sites/${slug}`),
@@ -32,6 +34,7 @@ export function DetailPage({ session }: { session: Session }) {
     mutationFn: (path: string) => api<SiteDetail>(`/api/sites/${slug}/files?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
     onSuccess: (data) => {
       setError("");
+      setPendingPath(null);
       queryClient.setQueryData(["site", slug], data);
       queryClient.invalidateQueries({ queryKey: ["sites"] });
     },
@@ -64,7 +67,7 @@ export function DetailPage({ session }: { session: Session }) {
             <a className="metric-host" href={site.url}>
               {site.host}
             </a>
-            <CopyButton url={site.url} label={t("copy_link")} copied={t("copied")} />
+            <CopyMenu url={site.url} label={t("copy_link")} copied={t("copied")} />
           </div>
         </article>
       </section>
@@ -100,7 +103,7 @@ export function DetailPage({ session }: { session: Session }) {
           <Field.Label className="label">{t("path_label")}</Field.Label>
           <Input id="path" name="path" type="text" placeholder="index.html" autoComplete="off" className="text-input" />
         </Field.Root>
-        <Button type="submit" className="primary" disabled={upload.isPending}>
+        <Button type="submit" className="btn btn-primary" disabled={upload.isPending}>
           {t("upload")}
         </Button>
       </Form>
@@ -127,7 +130,7 @@ export function DetailPage({ session }: { session: Session }) {
                     {file.size} {t("bytes")}
                   </td>
                   <td className="col-action">
-                    <Button type="button" className="danger" disabled={remove.isPending} onClick={() => remove.mutate(file.path)}>
+                    <Button type="button" className="btn btn-danger" onClick={() => setPendingPath(file.path)}>
                       {t("delete")}
                     </Button>
                   </td>
@@ -138,9 +141,31 @@ export function DetailPage({ session }: { session: Session }) {
         ) : (
           <p className="empty-files">
             {t("no_files_before")} <code>index.html</code> {t("no_files_after")}
-          </p>
-        )}
+        </p>
+      )}
       </div>
+      <Dialog.Root open={pendingPath !== null} onOpenChange={(open) => { if (!open) setPendingPath(null); }}>
+        <Dialog.Portal>
+          <Dialog.Backdrop className="dialog-backdrop" />
+          <Dialog.Viewport className="dialog-viewport">
+            <Dialog.Popup className="dialog-popup">
+              <Dialog.Title className="dialog-title">{t("delete")}</Dialog.Title>
+              <Dialog.Description className="dialog-copy">{pendingPath}</Dialog.Description>
+              <div className="dialog-actions">
+                <Dialog.Close className="btn btn-ghost">{t("cancel")}</Dialog.Close>
+                <Button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={remove.isPending || !pendingPath}
+                  onClick={() => pendingPath && remove.mutate(pendingPath)}
+                >
+                  {t("delete")}
+                </Button>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

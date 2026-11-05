@@ -86,7 +86,7 @@ export function AuthPage({ session }: { session: Session }) {
                 <Input id="setup_token" name="setup_token" type="password" autoComplete="off" required className="text-input" />
               </Field.Root>
             ) : null}
-            <Button type="submit" className="primary auth-submit" disabled={submit.isPending}>
+            <Button type="submit" className="btn btn-primary auth-submit" disabled={submit.isPending}>
               {signup ? t("create_account_btn") : t("sign_in")}
             </Button>
           </Form>
@@ -99,7 +99,7 @@ export function AuthPage({ session }: { session: Session }) {
 export function LogoMark() {
   return (
     <svg className="mark" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
-      <rect width="28" height="28" rx="8" fill="#155eef" />
+      <rect width="28" height="28" rx="8" fill="#4f46e5" />
       <rect x="6.5" y="6.5" width="6.2" height="6.2" rx="1.4" fill="#fff" />
       <rect x="15.3" y="6.5" width="6.2" height="6.2" rx="1.4" fill="#fff" opacity=".88" />
       <rect x="6.5" y="15.3" width="6.2" height="6.2" rx="1.4" fill="#fff" opacity=".72" />
