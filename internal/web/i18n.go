@@ -2,11 +2,13 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -64,6 +66,20 @@ var messages = map[string]map[string]string{
 		"err_not_found":           "File or site not found.",
 		"err_too_large":           "File is larger than 8 MiB.",
 		"err_update_file":         "Could not update the file.",
+		"copy_link":               "Copy link",
+		"copied":                  "Copied",
+		"files_label":             "Files",
+		"files_one":               "%d file",
+		"files_many":              "%d files",
+		"col_name":                "Name",
+		"col_size":                "Size",
+		"ago_now":                 "Just now",
+		"ago_minute":              "%d minute ago",
+		"ago_minutes":             "%d minutes ago",
+		"ago_hour":                "%d hour ago",
+		"ago_hours":               "%d hours ago",
+		"ago_day":                 "%d day ago",
+		"ago_days":                "%d days ago",
 	},
 	langZH: {
 		"brand":                   "静态发布",
@@ -111,6 +127,20 @@ var messages = map[string]map[string]string{
 		"err_not_found":           "找不到文件或站点。",
 		"err_too_large":           "文件超过 8 MiB。",
 		"err_update_file":         "无法更新文件。",
+		"copy_link":               "复制链接",
+		"copied":                  "已复制",
+		"files_label":             "文件数",
+		"files_one":               "%d 个文件",
+		"files_many":              "%d 个文件",
+		"col_name":                "名称",
+		"col_size":                "大小",
+		"ago_now":                 "刚刚",
+		"ago_minute":              "%d 分钟前",
+		"ago_minutes":             "%d 分钟前",
+		"ago_hour":                "%d 小时前",
+		"ago_hours":               "%d 小时前",
+		"ago_day":                 "%d 天前",
+		"ago_days":                "%d 天前",
 	},
 }
 
@@ -124,6 +154,51 @@ func init() {
 			panic("i18n missing " + key)
 		}
 	}
+}
+
+func relativeTime(lang string, t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := time.Since(t)
+	if d < time.Minute {
+		return text(lang, "ago_now")
+	}
+	if d < time.Hour {
+		n := int(d.Minutes())
+		if n < 1 {
+			n = 1
+		}
+		if n == 1 {
+			return fmt.Sprintf(text(lang, "ago_minute"), n)
+		}
+		return fmt.Sprintf(text(lang, "ago_minutes"), n)
+	}
+	if d < 24*time.Hour {
+		n := int(d.Hours())
+		if n < 1 {
+			n = 1
+		}
+		if n == 1 {
+			return fmt.Sprintf(text(lang, "ago_hour"), n)
+		}
+		return fmt.Sprintf(text(lang, "ago_hours"), n)
+	}
+	n := int(d.Hours()) / 24
+	if n < 1 {
+		n = 1
+	}
+	if n == 1 {
+		return fmt.Sprintf(text(lang, "ago_day"), n)
+	}
+	return fmt.Sprintf(text(lang, "ago_days"), n)
+}
+
+func fileCountText(lang string, n int) string {
+	if n == 1 {
+		return fmt.Sprintf(text(lang, "files_one"), n)
+	}
+	return fmt.Sprintf(text(lang, "files_many"), n)
 }
 
 func text(lang, key string) string {

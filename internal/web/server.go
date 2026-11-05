@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/caidesen/mcp-static-deploy/internal/auth"
 	"github.com/caidesen/mcp-static-deploy/internal/mcp"
@@ -359,6 +360,7 @@ func (s *server) upload(c echo.Context) error {
 		if err != nil {
 			return err
 		}
+		data.Fragment = true
 		return s.render(c, http.StatusOK, "file-list", data)
 	}
 	return c.Redirect(http.StatusSeeOther, "/admin/sites/"+url.PathEscape(slug))
@@ -375,6 +377,7 @@ func (s *server) deleteFile(c echo.Context) error {
 		if err != nil {
 			return err
 		}
+		data.Fragment = true
 		return s.render(c, http.StatusOK, "file-list", data)
 	}
 	return c.Redirect(http.StatusSeeOther, "/admin/sites/"+url.PathEscape(slug))
@@ -387,6 +390,7 @@ func (s *server) siteError(c echo.Context, slug, key string) error {
 	}
 	data.Error = key
 	if fragment(c) {
+		data.Fragment = true
 		return s.render(c, http.StatusUnprocessableEntity, "file-list", data)
 	}
 	return s.render(c, http.StatusUnprocessableEntity, "layout", data)
@@ -400,11 +404,11 @@ func (s *server) adminData(c echo.Context) (viewData, error) {
 	}
 	rows := make([]siteRow, 0, len(list))
 	for _, site := range list {
-		rows = append(rows, siteRow{
-			Slug:    site.Slug,
-			URL:     sites.PublicURL(s.cfg.BaseURL, s.baseDomain, site.Slug),
-			Created: site.CreatedAt.Format("2006-01-02 15:04 UTC"),
-		})
+		row, err := s.siteCard(c, site)
+		if err != nil {
+			return viewData{}, err
+		}
+		rows = append(rows, row)
 	}
 	return viewData{
 		View:    "admin",
@@ -428,20 +432,38 @@ func (s *server) siteData(c echo.Context, slug string) (viewData, error) {
 	for _, f := range files {
 		fileRows = append(fileRows, fileRow{Path: f.Path, Size: f.Size})
 	}
-	pub := sites.PublicURL(s.cfg.BaseURL, s.baseDomain, site.Slug)
 	host := site.Slug + "." + s.baseDomain
+	card, err := s.siteCard(c, site)
+	if err != nil {
+		return viewData{}, err
+	}
 	return viewData{
 		View:    "site",
 		Email:   user.Email,
 		BaseURL: s.cfg.BaseURL,
 		HasSite: true,
-		Site: siteRow{
-			Slug:    site.Slug,
-			URL:     pub,
-			Created: site.CreatedAt.Format("2006-01-02 15:04 UTC"),
-		},
-		Files: fileRows,
-		Curl:  "curl -H " + strconv.Quote("Host: "+host) + " " + strings.TrimRight(s.cfg.BaseURL, "/") + "/",
+		Site:    card,
+		Files:   fileRows,
+		Curl:    "curl -H " + strconv.Quote("Host: "+host) + " " + strings.TrimRight(s.cfg.BaseURL, "/") + "/",
+	}, nil
+}
+
+func (s *server) siteCard(c echo.Context, site sites.Site) (siteRow, error) {
+	files, err := s.sites.ListFiles(c.Request().Context(), site.OwnerUserID, site.Slug)
+	if err != nil {
+		return siteRow{}, err
+	}
+	lang := negotiateLang(c.Request())
+	pub := sites.PublicURL(s.cfg.BaseURL, s.baseDomain, site.Slug)
+	return siteRow{
+		Slug:  site.Slug,
+		URL:   pub,
+		Host:  publicHost(pub),
+		Files: len(files),
+		When:  relativeTime(lang, site.CreatedAt),
+		Mark:  slugMark(site.Slug),
+		Icon:  iconClass(site.Slug),
+		Count: fileCountText(lang, len(files)),
 	}, nil
 }
 
@@ -533,12 +555,53 @@ type viewData struct {
 	HasSite    bool
 	Files      []fileRow
 	Curl       string
+	Fragment   bool
+}
+
+func (v viewData) Initial() string {
+	email := strings.TrimSpace(v.Email)
+	if email == "" {
+		return "?"
+	}
+	r, _ := utf8.DecodeRuneInString(email)
+	if r == utf8.RuneError {
+		return "?"
+	}
+	return strings.ToUpper(string(r))
 }
 
 type siteRow struct {
-	Slug    string
-	URL     string
-	Created string
+	Slug  string
+	URL   string
+	Host  string
+	Files int
+	When  string
+	Mark  string
+	Icon  string
+	Count string
+}
+
+func publicHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	return u.Host
+}
+
+func slugMark(slug string) string {
+	r, _ := utf8.DecodeRuneInString(slug)
+	if r == utf8.RuneError {
+		return "?"
+	}
+	return strings.ToUpper(string(r))
+}
+
+func iconClass(slug string) string {
+	if slug == "" {
+		return "icon-0"
+	}
+	return "icon-" + strconv.Itoa(int(slug[0])%6)
 }
 
 type fileRow struct {
