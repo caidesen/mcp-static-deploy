@@ -205,6 +205,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .tile-copy { display: flex; flex-direction: column; min-width: 0; }
 .tile-name { overflow: hidden; font-size: 14px; font-weight: 600; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .tile-host { overflow: hidden; color: var(--muted); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.tile-note { overflow: hidden; color: var(--secondary); font-size: 14px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.site-note { margin: 6px 0 0; color: var(--secondary); font-size: 14px; line-height: 20px; }
+.note-field { margin-top: 0; }
 .tile-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: var(--muted); font-size: 12px; line-height: 18px; }
 .tile-menu { width: 28px; height: 28px; padding: 0; border: 0; color: var(--muted); letter-spacing: 1px; }
 .empty-line { margin: 0; padding: 16px; border: 1px dashed var(--border-strong); border-radius: 12px; background: var(--surface); color: var(--muted); }

@@ -13,6 +13,7 @@ export type Site = {
   slug: string;
   url: string;
   host: string;
+  note: string;
   files: number;
   count: string;
 };

@@ -4,7 +4,7 @@ import { Field } from "@base-ui/react/field";
 import { Form } from "@base-ui/react/form";
 import { Input } from "@base-ui/react/input";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, api, type Session, type SiteDetail } from "./api";
 import { CopyMenu } from "./sites";
@@ -16,10 +16,25 @@ export function DetailPage({ session }: { session: Session }) {
   const [error, setError] = useState("");
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
+  const [note, setNote] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const detail = useQuery({
     queryKey: ["site", slug],
     queryFn: () => api<SiteDetail>(`/api/sites/${slug}`),
+  });
+
+  useEffect(() => {
+    setNote(detail.data?.site.note ?? "");
+  }, [detail.data?.site.note]);
+
+  const saveNote = useMutation({
+    mutationFn: (value: string) => api<SiteDetail>(`/api/sites/${slug}`, { method: "PATCH", body: JSON.stringify({ note: value }) }),
+    onSuccess: (data) => {
+      setError("");
+      queryClient.setQueryData(["site", slug], data);
+      queryClient.invalidateQueries({ queryKey: ["sites"] });
+    },
+    onError: (err: Error) => setError(err instanceof ApiError ? t(err.message) : t("err_internal")),
   });
 
   const upload = useMutation({
@@ -56,8 +71,33 @@ export function DetailPage({ session }: { session: Session }) {
             <Link to="/admin">{t("all_sites")}</Link> <span aria-hidden="true">/</span> {site.slug}
           </p>
           <h1>{site.slug}</h1>
+          {site.note ? <p className="site-note">{site.note}</p> : null}
         </div>
       </div>
+      <Form
+        className="card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          saveNote.mutate(note);
+        }}
+      >
+        <Field.Root name="note" className="field note-field">
+          <Field.Label className="label">{t("note")}</Field.Label>
+          <Input
+            name="note"
+            type="text"
+            maxLength={160}
+            autoComplete="off"
+            className="text-input"
+            value={note}
+            placeholder={t("note_placeholder")}
+            onChange={(event) => setNote(event.currentTarget.value)}
+          />
+        </Field.Root>
+        <Button type="submit" className="btn btn-primary form-submit" disabled={saveNote.isPending}>
+          {t("save_note")}
+        </Button>
+      </Form>
       <section className="metrics">
         <article className="metric">
           <span className="metric-label">{t("files_label")}</span>

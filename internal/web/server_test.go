@@ -119,6 +119,20 @@ func TestPublishFlow(t *testing.T) {
 	}
 	slug := m[1]
 
+	noteReq, err := http.NewRequest(http.MethodPatch, base+"/api/sites/"+slug, strings.NewReader(`{"note":"landing page"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	noteReq.Header.Set("Content-Type", "application/json")
+	noteRes, err := client.Do(noteReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noteBody := readAll(t, noteRes)
+	if noteRes.StatusCode != http.StatusOK || !strings.Contains(noteBody, `"note":"landing page"`) {
+		t.Fatalf("set note: %d %s", noteRes.StatusCode, noteBody)
+	}
+
 	res = postFile(t, client, base+"/api/sites/"+slug+"/files", "index.html", "<h1>from-web</h1>")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("upload: %d %s", res.StatusCode, readAll(t, res))
@@ -181,13 +195,17 @@ func TestPublishFlow(t *testing.T) {
 	session := connectMCP(t, ctx, base+"/mcp", &http.Client{Transport: bearerTransport{base: http.DefaultTransport, token: token}})
 	defer session.Close()
 
-	created := callTool(t, ctx, session, "create_site", map[string]any{})
+	created := callTool(t, ctx, session, "create_site", map[string]any{"note": "from mcp"})
 	var site struct {
 		Slug string `json:"slug"`
 		URL  string `json:"url"`
+		Note string `json:"note"`
 	}
 	if err := created.Unmarshal(&site); err != nil {
 		t.Fatal(err)
+	}
+	if site.Note != "from mcp" {
+		t.Fatalf("mcp note %q", site.Note)
 	}
 	if !regexp.MustCompile(`^[a-z]{6}$`).MatchString(site.Slug) {
 		t.Fatalf("mcp slug %q", site.Slug)

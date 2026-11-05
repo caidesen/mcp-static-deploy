@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -23,7 +24,7 @@ func TestPutFileRejectsTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := New(db, dir)
-	site, err := st.Create(ctx, "user-1")
+	site, err := st.Create(ctx, "user-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,5 +50,47 @@ func TestPutFileRejectsTraversal(t *testing.T) {
 	}
 	if _, err := st.GetOwned(ctx, "other", site.Slug); err != ErrNotFound {
 		t.Fatalf("other owner got %v", err)
+	}
+}
+
+func TestNoteRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(dir, "t.db"))+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE sites (
+		id TEXT PRIMARY KEY,
+		slug TEXT NOT NULL UNIQUE,
+		owner_user_id TEXT NOT NULL,
+		created_at TEXT NOT NULL
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	st := New(db, dir)
+	site, err := st.Create(ctx, "user-1", "  landing page  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if site.Note != "landing page" {
+		t.Fatalf("created note %q", site.Note)
+	}
+	updated, err := st.SetNote(ctx, "user-1", site.Slug, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Note != "docs" {
+		t.Fatalf("updated note %q", updated.Note)
+	}
+	if _, err := st.SetNote(ctx, "user-1", site.Slug, strings.Repeat("x", MaxNoteRunes+1)); err != ErrNoteTooLong {
+		t.Fatalf("long note: %v", err)
+	}
+	if _, err := st.SetNote(ctx, "other", site.Slug, "nope"); err != ErrNotFound {
+		t.Fatalf("other owner set note: %v", err)
 	}
 }

@@ -139,6 +139,7 @@ func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, err
 	authed.GET("/sites", s.listSites)
 	authed.POST("/sites", s.createSite)
 	authed.GET("/sites/:slug", s.getSite)
+	authed.PATCH("/sites/:slug", s.updateSite)
 	authed.POST("/sites/:slug/files", s.upload)
 	authed.DELETE("/sites/:slug/files", s.deleteFile)
 
@@ -352,8 +353,15 @@ func (s *server) listSites(c echo.Context) error {
 
 func (s *server) createSite(c echo.Context) error {
 	user, _ := theauth.UserFromContext(c.Request().Context())
-	site, err := s.sites.Create(c.Request().Context(), user.ID.String())
+	note, ok := readNote(c)
+	if !ok {
+		return nil
+	}
+	site, err := s.sites.Create(c.Request().Context(), user.ID.String(), note)
 	if err != nil {
+		if status, key, handled := noteStatus(err); handled {
+			return c.JSON(status, map[string]string{"error": key})
+		}
 		return err
 	}
 	row, err := s.siteCard(c, site)
@@ -361,6 +369,55 @@ func (s *server) createSite(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusCreated, row)
+}
+
+func (s *server) updateSite(c echo.Context) error {
+	user, _ := theauth.UserFromContext(c.Request().Context())
+	note, ok := readNote(c)
+	if !ok {
+		return nil
+	}
+	if _, err := s.sites.SetNote(c.Request().Context(), user.ID.String(), c.Param("slug"), note); err != nil {
+		if status, key, handled := noteStatus(err); handled {
+			return c.JSON(status, map[string]string{"error": key})
+		}
+		return err
+	}
+	detail, err := s.siteDetail(c, c.Param("slug"))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, detail)
+}
+
+func readNote(c echo.Context) (string, bool) {
+	var body struct {
+		Note string `json:"note"`
+	}
+	if c.Request().Body != nil && c.Request().ContentLength != 0 {
+		if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			_ = c.JSON(http.StatusBadRequest, map[string]string{"error": "err_bad_request"})
+			return "", false
+		}
+	}
+	note, err := sites.CleanNote(body.Note)
+	if err != nil {
+		status, key, _ := noteStatus(err)
+		_ = c.JSON(status, map[string]string{"error": key})
+		return "", false
+	}
+	return note, true
+}
+
+func noteStatus(err error) (int, string, bool) {
+	switch {
+	case errors.Is(err, sites.ErrNoteTooLong):
+		return http.StatusUnprocessableEntity, "err_note_too_long", true
+	case errors.Is(err, sites.ErrNotFound):
+		return http.StatusNotFound, "err_not_found", true
+	default:
+		return http.StatusInternalServerError, "err_internal", false
+	}
 }
 
 func (s *server) getSite(c echo.Context) error {
@@ -469,6 +526,7 @@ func (s *server) siteCard(c echo.Context, site sites.Site) (siteJSON, error) {
 		Slug:  site.Slug,
 		URL:   pub,
 		Host:  publicHost(pub),
+		Note:  site.Note,
 		Files: len(files),
 		Count: fileCountText(negotiateLang(c.Request()), len(files)),
 	}, nil
@@ -540,6 +598,7 @@ type siteJSON struct {
 	Slug  string `json:"slug"`
 	URL   string `json:"url"`
 	Host  string `json:"host"`
+	Note  string `json:"note"`
 	Files int    `json:"files"`
 	Count string `json:"count"`
 }

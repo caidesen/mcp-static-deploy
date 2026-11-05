@@ -2,6 +2,7 @@ import { Button } from "@base-ui/react/button";
 import { Dialog } from "@base-ui/react/dialog";
 import { Field } from "@base-ui/react/field";
 import { Form } from "@base-ui/react/form";
+import { Input } from "@base-ui/react/input";
 import { Menu } from "@base-ui/react/menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -13,14 +14,16 @@ export function SitesPage({ session }: { session: Session }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
   const sites = useQuery({
     queryKey: ["sites"],
     queryFn: () => api<Site[]>("/api/sites"),
   });
   const create = useMutation({
-    mutationFn: () => api<Site>("/api/sites", { method: "POST" }),
+    mutationFn: (value: string) => api<Site>("/api/sites", { method: "POST", body: JSON.stringify({ note: value }) }),
     onSuccess: () => {
       setError("");
+      setNote("");
       setOpen(false);
       queryClient.invalidateQueries({ queryKey: ["sites"] });
     },
@@ -34,7 +37,13 @@ export function SitesPage({ session }: { session: Session }) {
           <h1>{t("sites")}</h1>
           <p className="subtitle">{t("site_hint")}</p>
         </div>
-        <Dialog.Root open={open} onOpenChange={setOpen}>
+        <Dialog.Root
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (!next) setNote("");
+          }}
+        >
           <Dialog.Trigger className="btn btn-primary">+ {t("create_site")}</Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Backdrop className="dialog-backdrop" />
@@ -44,12 +53,22 @@ export function SitesPage({ session }: { session: Session }) {
                   className="stack-form"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    create.mutate();
+                    create.mutate(note);
                   }}
                 >
                   <Dialog.Title className="dialog-title">{t("create_site")}</Dialog.Title>
-                  <Field.Root className="field">
-                    <Field.Label className="label">{t("sites")}</Field.Label>
+                  <Field.Root name="note" className="field">
+                    <Field.Label className="label">{t("note")}</Field.Label>
+                    <Input
+                      name="note"
+                      type="text"
+                      maxLength={160}
+                      autoComplete="off"
+                      className="text-input"
+                      value={note}
+                      placeholder={t("note_placeholder")}
+                      onChange={(event) => setNote(event.currentTarget.value)}
+                    />
                     <Field.Description className="field-hint">{t("site_hint")}</Field.Description>
                   </Field.Root>
                   <Button type="submit" className="btn btn-primary form-submit" disabled={create.isPending}>
@@ -78,6 +97,7 @@ export function SitesPage({ session }: { session: Session }) {
                 <span className="tile-copy">
                   <span className="tile-name">{site.slug}</span>
                   <span className="tile-host">{site.host}</span>
+                  {site.note ? <span className="tile-note">{site.note}</span> : null}
                 </span>
               </Link>
               <div className="tile-foot">

@@ -27,7 +27,7 @@ func Handler(st *sites.Store, baseURL, baseDomain string, disableLocalhost bool,
 	svc := &tools{tokens: tokens, sites: st, baseURL: baseURL, baseDomain: baseDomain}
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "create_site",
-		Description: "Create a static site you own. Returns a random slug and its public URL.",
+		Description: "Create a static site you own. An optional note is a short description of what the site contains. Returns a random slug, the note, and the public URL.",
 	}, svc.createSite)
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "put_file",
@@ -62,11 +62,14 @@ type tools struct {
 	baseDomain string
 }
 
-type createIn struct{}
+type createIn struct {
+	Note string `json:"note,omitempty" jsonschema:"optional short description of what the site contains"`
+}
 
 type siteOut struct {
 	Slug string `json:"slug"`
 	URL  string `json:"url"`
+	Note string `json:"note,omitempty"`
 }
 
 type putIn struct {
@@ -99,16 +102,16 @@ type listOut struct {
 	Files []fileOut `json:"files"`
 }
 
-func (t *tools) createSite(ctx context.Context, req *mcpsdk.CallToolRequest, _ createIn) (*mcpsdk.CallToolResult, siteOut, error) {
+func (t *tools) createSite(ctx context.Context, req *mcpsdk.CallToolRequest, in createIn) (*mcpsdk.CallToolResult, siteOut, error) {
 	owner, err := t.owner(ctx, req)
 	if err != nil {
 		return nil, siteOut{}, err
 	}
-	site, err := t.sites.Create(ctx, owner)
+	site, err := t.sites.Create(ctx, owner, in.Note)
 	if err != nil {
 		return nil, siteOut{}, err
 	}
-	return nil, siteOut{Slug: site.Slug, URL: sites.PublicURL(t.baseURL, t.baseDomain, site.Slug)}, nil
+	return nil, siteOut{Slug: site.Slug, URL: sites.PublicURL(t.baseURL, t.baseDomain, site.Slug), Note: site.Note}, nil
 }
 
 func (t *tools) putFile(ctx context.Context, req *mcpsdk.CallToolRequest, in putIn) (*mcpsdk.CallToolResult, okOut, error) {

@@ -111,7 +111,7 @@ The signing key is sealed with `DATA_DIR/oauth-encryption.key`, created on first
 
 Tools:
 
-- `create_site` — no arguments; returns `slug` and `url`
+- `create_site` — optional `note` (short description, at most 160 characters); returns `slug`, `url`, and `note`
 - `put_file` — `slug`, `path`, `content`, optional `encoding` (`utf-8` or `base64`)
 - `delete_file` — `slug`, `path`
 - `list_files` — `slug`
