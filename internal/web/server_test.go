@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -253,21 +254,39 @@ func (r toolResult) Unmarshal(dest any) error {
 	return unmarshalResult(r.raw, dest)
 }
 
-func TestBootRequiresBaseDomain(t *testing.T) {
-	_, err := Boot(context.Background(), Config{
-		BaseURL: "http://localhost:8080",
-		DataDir: t.TempDir(),
-	})
-	if err == nil || !strings.Contains(err.Error(), "BASE_DOMAIN") {
-		t.Fatalf("Boot() error = %v", err)
+func TestEmptyBaseDomainDoesNotServeSites(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, err = Boot(context.Background(), Config{
-		BaseURL:    "http://localhost:8080",
+	base := "http://" + ln.Addr().String()
+	rt, err := Boot(context.Background(), Config{
+		BaseURL:    base,
 		BaseDomain: "   ",
 		DataDir:    t.TempDir(),
+		SetupToken: "test-setup-token",
 	})
-	if err == nil || !strings.Contains(err.Error(), "BASE_DOMAIN") {
-		t.Fatalf("Boot(whitespace) error = %v", err)
+	if err != nil {
+		ln.Close()
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: rt.Handler}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() {
+		_ = srv.Close()
+		rt.Close()
+	})
+	if !strings.Contains(logs.String(), "public sites are not served") {
+		t.Fatalf("missing public-site warning: %s", logs.String())
+	}
+	code, body := getHost(t, base+"/", "abcdef.example")
+	if code != http.StatusOK || !strings.Contains(body, `id="root"`) || strings.Contains(body, "from-web") {
+		t.Fatalf("empty domain served a site: %d %s", code, body)
 	}
 }
 
@@ -279,14 +298,11 @@ func startServer(t *testing.T) (string, *Runtime) {
 	}
 	base := "http://" + ln.Addr().String()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "setup-token"), []byte("test-setup-token\n"), 0o600); err != nil {
-		ln.Close()
-		t.Fatal(err)
-	}
 	rt, err := Boot(context.Background(), Config{
 		BaseURL:    base,
 		BaseDomain: "localhost",
 		DataDir:    dir,
+		SetupToken: "test-setup-token",
 	})
 	if err != nil {
 		ln.Close()

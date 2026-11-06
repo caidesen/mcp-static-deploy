@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/caidesen/mcp-static-deploy/internal/config"
 	"github.com/caidesen/mcp-static-deploy/internal/web"
 )
 
@@ -22,16 +23,25 @@ func main() {
 }
 
 func run() error {
-	baseDomain := strings.TrimSpace(os.Getenv("BASE_DOMAIN"))
-	if baseDomain == "" {
-		return errors.New("BASE_DOMAIN is empty")
+	dataDir := os.Getenv("DATA_DIR")
+	if strings.TrimSpace(dataDir) == "" {
+		dataDir = "data"
+	}
+	file, err := config.Load(dataDir)
+	if err != nil {
+		return err
+	}
+	baseURL := file.BaseURL
+	if baseURL == "" {
+		baseURL = config.FallbackBaseURL(file.Addr)
+		slog.Warn("baseUrl is empty; using a loopback stand-in until config.json sets baseUrl", "baseUrl", baseURL)
 	}
 	cfg := web.Config{
-		BaseURL:    env("BASE_URL", "http://localhost:8080"),
-		BaseDomain: baseDomain,
-		DataDir:    env("DATA_DIR", "data"),
+		BaseURL:    baseURL,
+		BaseDomain: file.BaseDomain,
+		DataDir:    dataDir,
+		SetupToken: file.SetupToken,
 	}
-	addr := env("ADDR", ":8080")
 	ctx := context.Background()
 	rt, err := web.Boot(ctx, cfg)
 	if err != nil {
@@ -40,14 +50,14 @@ func run() error {
 	defer rt.Close()
 
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              file.Addr,
 		Handler:           rt.Handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("listening", "addr", addr, "baseURL", cfg.BaseURL, "baseDomain", cfg.BaseDomain)
+		slog.Info("listening", "addr", file.Addr, "baseURL", cfg.BaseURL, "baseDomain", cfg.BaseDomain)
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -64,11 +74,4 @@ func run() error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
-}
-
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

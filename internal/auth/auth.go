@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -33,8 +31,9 @@ type App struct {
 
 // Options configures SQLite and theauth.
 type Options struct {
-	DataDir string
-	BaseURL string
+	DataDir    string
+	BaseURL    string
+	SetupToken string
 }
 
 // Open migrates theauth's SQLite schema and mounts its routes on a chi router.
@@ -71,10 +70,10 @@ func Open(ctx context.Context, opt Options) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	token, err := setupToken(opt.DataDir)
-	if err != nil {
+	token := strings.TrimSpace(opt.SetupToken)
+	if token == "" {
 		_ = db.Close()
-		return nil, err
+		return nil, errors.New("setup token is empty")
 	}
 	issuer := strings.TrimRight(opt.BaseURL, "/")
 	a, err := theauth.New(theauth.Config{
@@ -161,53 +160,6 @@ func encryptionKey(dir string) ([]byte, error) {
 		return nil, err
 	}
 	return b, nil
-}
-
-// setupToken reads DATA_DIR/setup-token. The first boot creates a random
-// token, writes it with mode 0600, and logs it once. Later boots only read it.
-// The environment is not consulted.
-func setupToken(dir string) (string, error) {
-	path := filepath.Join(dir, "setup-token")
-	token, err := readSetupToken(path)
-	if err == nil {
-		return token, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	token = hex.EncodeToString(raw)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return readSetupToken(path)
-		}
-		return "", err
-	}
-	defer f.Close()
-	if _, err := f.WriteString(token + "\n"); err != nil {
-		return "", err
-	}
-	if err := f.Chmod(0o600); err != nil {
-		return "", err
-	}
-	slog.Info("setup token created; use it to create the first account", "token", token, "path", path)
-	return token, nil
-}
-
-func readSetupToken(path string) (string, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	token := strings.TrimSpace(string(b))
-	if token == "" {
-		return "", fmt.Errorf("setup token file is empty")
-	}
-	return token, nil
 }
 
 func sqliteDSN(path string) string {
