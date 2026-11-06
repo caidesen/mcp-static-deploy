@@ -5,7 +5,7 @@
 One Go binary serves three things:
 
 - a React admin UI (Base UI, TanStack Query) built into the binary, on the apex host
-- public static files when `Host` is `{slug}.{baseDomain}`
+- public static files when `Host` is `{slug}.$BASE_DOMAIN`
 - an MCP Streamable HTTP endpoint at `/mcp`
 
 Reads of a published site are public. Creating a site and writing files require a signed-in user.
@@ -22,10 +22,12 @@ CGO_ENABLED=0 go build -o server ./cmd/server
 ## Run
 
 ```sh
-DATA_DIR=./data ./server
+DATA_DIR=./data BASE_DOMAIN=localhost ./server
 ```
 
-`DATA_DIR` defaults to `data`. That directory holds `config.json`, the SQLite file `app.db`, site files `sites/{slug}/`, and `oauth-encryption.key`. `ADDR`, `BASE_URL`, `BASE_DOMAIN`, and `SETUP_TOKEN` are not read from the environment.
+`DATA_DIR` defaults to `data`. That directory holds `config.json`, the SQLite file `app.db`, site files `sites/{slug}/`, and `oauth-encryption.key`. `ADDR`, `BASE_URL`, and `SETUP_TOKEN` are not read from the environment.
+
+`BASE_DOMAIN` is read from the environment on every start. It is the parent host for public sites, `{slug}.$BASE_DOMAIN`. An empty value still starts the process and logs that public sites are not served.
 
 On first boot, if `DATA_DIR/config.json` is missing, the process creates it with mode 0600 and logs `setupToken` once:
 
@@ -33,12 +35,11 @@ On first boot, if `DATA_DIR/config.json` is missing, the process creates it with
 {
   "setupToken": "<64 hex characters>",
   "addr": ":8080",
-  "baseUrl": "",
-  "baseDomain": ""
+  "baseUrl": ""
 }
 ```
 
-Later boots read that file and do not log the token again. Fill in `baseUrl` and `baseDomain`, then restart. `baseUrl` is the apex URL (`http` leaves the session cookie non-Secure). `baseDomain` is the parent host for public sites, `{slug}.{baseDomain}`. Until `baseDomain` is set, the process still starts and logs that public sites are not served. Until `baseUrl` is set, it listens with a loopback stand-in (`http://127.0.0.1` plus the port in `addr`) so the operator can edit the file.
+Later boots read that file and do not log the token again. Fill in `baseUrl`, then restart. `baseUrl` is the apex URL (`http` leaves the session cookie non-Secure). Until `baseUrl` is set, the process listens with a loopback stand-in (`http://127.0.0.1` plus the port in `addr`).
 
 ## Container image
 
@@ -51,6 +52,7 @@ The Dockerfile is multi-stage. The build stage uses `golang:1.26.10-bookworm` an
 ```sh
 docker build -t mcp-static-deploy .
 docker run --rm -p 8080:8080 \
+  -e BASE_DOMAIN=localhost \
   -v mcp-static-data:/data \
   mcp-static-deploy
 ```
@@ -60,10 +62,11 @@ Pull the published image with `docker pull ghcr.io/caidesen/mcp-static-deploy:la
 | Variable | Image default | Role |
 | --- | --- | --- |
 | `DATA_DIR` | `/data` | Holds `config.json`, `app.db`, `sites/{slug}/`, and `oauth-encryption.key`. Mount a volume here. |
+| `BASE_DOMAIN` | none | Read on every start. Public sites are `{slug}.$BASE_DOMAIN`. Empty still starts and does not serve public sites. |
 
 A Docker named volume is created writable by uid 65532. A bind-mounted host directory must already be writable by that user.
 
-This image does not configure DNS or TLS. Point `*.baseDomain` at the process yourself.
+This image does not configure DNS or TLS. Point `*.$BASE_DOMAIN` at the process yourself.
 
 Open the apex URL from `baseUrl`. While no account exists, the page asks for email, a password of at least 12 characters, and `setupToken` from `config.json`. That calls `POST /auth/email-password/signup` with `X-Setup-Token`. After the first account exists, signup stays closed and the same page is email/password sign-in.
 
@@ -78,7 +81,7 @@ curl -c jar -X POST "$BASE_URL/auth/email-password/signup" \
 
 ## Publish from the browser
 
-Sign in, choose **Create site**, and upload files. `index.html` is the front page. The page shows the public URL, for example `http://alksgi.localhost:8080/` when `baseDomain` is `localhost` and `baseUrl` is `http://localhost:8080`.
+Sign in, choose **Create site**, and upload files. `index.html` is the front page. The page shows the public URL, for example `http://alksgi.localhost:8080/` when `BASE_DOMAIN` is `localhost` and `baseUrl` is `http://localhost:8080`.
 
 Replacing a file uploads the same path again. Delete removes that file only. The file list is the directory on disk; file rows are not stored in SQLite.
 
@@ -116,7 +119,7 @@ Paths are cleaned. `..` and absolute paths are rejected. Files live in `DATA_DIR
 
 ## Local check without DNS
 
-Set `baseDomain` to `localhost` in `config.json` and send a `Host` header. No wildcard DNS or TLS is set up by this binary.
+Set `BASE_DOMAIN=localhost` and send a `Host` header. No wildcard DNS or TLS is set up by this binary.
 
 ```sh
 # after uploading index.html for slug alksgi
@@ -133,6 +136,6 @@ The apex host (`localhost`, or `127.0.0.1` when that is how you connect) serves 
 - Magic-link and password-reset mail is discarded, not delivered (the library's default sender would also only log the message). Use the setup token and a password for the first account, then email and password to sign in.
 - `storage/sqlite` v0.3.0 is built for theauth-go v2.11.0. Newer theauth releases add storage methods this SQLite adapter does not implement, so the module is pinned to v2.11.0.
 - Signup closes after the first user.
-- There is no DNS or certificate automation. Point `*.baseDomain` at this process yourself.
-- When `baseDomain` is not a localhost name, the MCP SDK's loopback Host check is turned off so a reverse proxy on `127.0.0.1` can forward the public `Host`. Calls still require an OAuth access token for this MCP resource. An empty `baseDomain` does not turn that check off, and public sites are not served.
+- There is no DNS or certificate automation. Point `*.$BASE_DOMAIN` at this process yourself.
+- When `BASE_DOMAIN` is not a localhost name, the MCP SDK's loopback Host check is turned off so a reverse proxy on `127.0.0.1` can forward the public `Host`. Calls still require an OAuth access token for this MCP resource. An empty `BASE_DOMAIN` does not turn that check off, and public sites are not served.
 - Uploads are limited to 8 MiB.

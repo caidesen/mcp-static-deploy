@@ -55,7 +55,7 @@ func (r *Runtime) Close() {
 func Boot(ctx context.Context, cfg Config) (*Runtime, error) {
 	cfg.BaseDomain = sites.NormalizeDomain(cfg.BaseDomain)
 	if cfg.BaseDomain == "" {
-		slog.Warn("baseDomain is empty; public sites are not served until config.json sets baseDomain")
+		slog.Warn("BASE_DOMAIN is empty; public sites are not served until it is set")
 	}
 	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
 	if cfg.BaseURL == "" {

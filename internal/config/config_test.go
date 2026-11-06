@@ -26,7 +26,7 @@ func TestLoadCreatesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Addr != ":8080" || cfg.BaseURL != "" || cfg.BaseDomain != "" {
+	if cfg.Addr != ":8080" || cfg.BaseURL != "" {
 		t.Fatalf("generated config %+v", cfg)
 	}
 	if cfg.SetupToken == "" || cfg.SetupToken == "from-the-environment" || len(cfg.SetupToken) != 64 {
@@ -43,6 +43,9 @@ func TestLoadCreatesConfig(t *testing.T) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "baseDomain") || strings.Contains(string(raw), "from-env.example") {
+		t.Fatalf("config.json stored the domain: %s", raw)
 	}
 	if !strings.Contains(buf.String(), "created config.json") || !strings.Contains(buf.String(), cfg.SetupToken) {
 		t.Fatalf("create log %q", buf.String())
@@ -77,7 +80,7 @@ func TestLoadCreatesConfig(t *testing.T) {
 
 func TestLoadRejectsEmptyToken(t *testing.T) {
 	dir := t.TempDir()
-	body := []byte("{\n  \"setupToken\": \" \",\n  \"addr\": \":8080\",\n  \"baseUrl\": \"\",\n  \"baseDomain\": \"\"\n}\n")
+	body := []byte("{\n  \"setupToken\": \" \",\n  \"addr\": \":8080\",\n  \"baseUrl\": \"\"\n}\n")
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), body, 0o600); err != nil {
 		t.Fatal(err)
 	}

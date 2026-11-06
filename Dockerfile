@@ -4,18 +4,19 @@
 # The final stage runs only that binary.
 #
 #   docker build -t mcp-static-deploy .
-#   docker run --rm -p 8080:8080 -v mcp-static-data:/data mcp-static-deploy
+#   docker run --rm -p 8080:8080 -e BASE_DOMAIN=localhost -v mcp-static-data:/data mcp-static-deploy
 #
 # Runtime environment:
-#   DATA_DIR   config.json, SQLite, sites/{slug}/, oauth-encryption.key   default /data
+#   DATA_DIR      config.json, SQLite, sites/{slug}/, oauth-encryption.key   default /data
+#   BASE_DOMAIN   public sites are {slug}.$BASE_DOMAIN. Read on every start.
+#                 Empty still starts and does not serve public sites. No default.
 #
-# ADDR, BASE_URL, BASE_DOMAIN, and SETUP_TOKEN are not read from the environment.
+# ADDR, BASE_URL, and SETUP_TOKEN are not read from the environment.
 # First boot writes DATA_DIR/config.json (mode 0600): random setupToken, addr ":8080",
-# and empty baseUrl and baseDomain. Later boots read that file. Edit baseUrl and
-# baseDomain, then restart. An empty baseDomain still starts the process and logs
-# that public sites are not served. oauth-encryption.key stays its own file.
+# and an empty baseUrl. Later boots read that file. Edit baseUrl, then restart.
+# oauth-encryption.key stays its own file.
 #
-# Wildcard DNS for *.{baseDomain} is not configured by this image.
+# Wildcard DNS for *.$BASE_DOMAIN is not configured by this image.
 
 FROM node:22-bookworm AS ui
 

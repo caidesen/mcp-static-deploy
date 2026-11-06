@@ -1,5 +1,6 @@
 // Package config loads DATA_DIR/config.json. The process does not read
-// ADDR, BASE_URL, BASE_DOMAIN, or SETUP_TOKEN from the environment.
+// ADDR, BASE_URL, or SETUP_TOKEN from the environment. BASE_DOMAIN is read
+// separately on every start.
 package config
 
 import (
@@ -20,12 +21,11 @@ type File struct {
 	SetupToken string `json:"setupToken"`
 	Addr       string `json:"addr"`
 	BaseURL    string `json:"baseUrl"`
-	BaseDomain string `json:"baseDomain"`
 }
 
 // Load reads config.json, or creates it on first boot with mode 0600.
-// A created file has a random setup token, addr ":8080", and empty baseUrl
-// and baseDomain. Later boots return the file unchanged.
+// A created file has a random setup token, addr ":8080", and an empty baseUrl.
+// Later boots return the file unchanged.
 func Load(dir string) (File, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return File{}, err
@@ -46,7 +46,6 @@ func Load(dir string) (File, error) {
 		SetupToken: hex.EncodeToString(raw),
 		Addr:       ":8080",
 		BaseURL:    "",
-		BaseDomain: "",
 	}
 	body, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -83,7 +82,6 @@ func parse(b []byte) (File, error) {
 	cfg.SetupToken = strings.TrimSpace(cfg.SetupToken)
 	cfg.Addr = strings.TrimSpace(cfg.Addr)
 	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
-	cfg.BaseDomain = strings.TrimSpace(cfg.BaseDomain)
 	if cfg.SetupToken == "" {
 		return File{}, errors.New("config.json setupToken is empty")
 	}

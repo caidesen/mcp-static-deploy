@@ -38,7 +38,7 @@ func run() error {
 	}
 	cfg := web.Config{
 		BaseURL:    baseURL,
-		BaseDomain: file.BaseDomain,
+		BaseDomain: os.Getenv("BASE_DOMAIN"),
 		DataDir:    dataDir,
 		SetupToken: file.SetupToken,
 	}
