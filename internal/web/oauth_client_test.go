@@ -263,3 +263,156 @@ func browserSignIn(ctx context.Context, browser *http.Client, base string) error
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// cursorRegistration is the dynamic-registration body Cursor posts when the
+// server does not advertise client metadata documents, and the body a browser
+// client retries from its advanced OAuth settings.
+func cursorRegistration() map[string]any {
+	return map[string]any{
+		"client_name": "Cursor",
+		"redirect_uris": []string{
+			"cursor://anysphere.cursor-mcp/oauth/callback",
+			"https://www.cursor.com/agents/mcp/oauth/callback",
+			cursorRedirectURI,
+		},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
+		"token_endpoint_auth_method": "none",
+		"application_type":           "native",
+	}
+}
+
+// TestDynamicClientRegistration is the request that produces
+// "OAuth client registration failed" in the client. Metadata advertises
+// registration_endpoint, but POST /oauth/register rejects the redirect URIs
+// the client sends, and a browser preflight cannot read the response.
+func TestDynamicClientRegistration(t *testing.T) {
+	base, _ := startServer(t)
+
+	metaRes, err := http.Get(base + "/.well-known/oauth-authorization-server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metaBody := readAll(t, metaRes)
+	var meta struct {
+		Registration string `json:"registration_endpoint"`
+	}
+	if err := json.Unmarshal([]byte(metaBody), &meta); err != nil {
+		t.Fatalf("metadata: %s", metaBody)
+	}
+	if meta.Registration != base+"/oauth/register" {
+		t.Fatalf("registration_endpoint %q", meta.Registration)
+	}
+	if got := metaRes.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("metadata CORS %q", got)
+	}
+	oidcRes, err := http.Get(base + "/.well-known/openid-configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oidcBody := readAll(t, oidcRes)
+	if !strings.Contains(oidcBody, base+"/oauth/register") {
+		t.Fatalf("openid-configuration missing registration_endpoint: %s", oidcBody)
+	}
+
+	pre, err := http.NewRequest(http.MethodOptions, base+"/oauth/register", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pre.Header.Set("Origin", "https://chatgpt.com")
+	pre.Header.Set("Access-Control-Request-Method", "POST")
+	pre.Header.Set("Access-Control-Request-Headers", "content-type")
+	preRes, err := http.DefaultClient.Do(pre)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preRes.Body.Close()
+	if preRes.StatusCode != http.StatusNoContent && preRes.StatusCode != http.StatusOK {
+		t.Fatalf("register preflight: %d", preRes.StatusCode)
+	}
+	if got := preRes.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("register preflight CORS %q", got)
+	}
+
+	var clientID string
+	for i := range 2 {
+		res := postJSON(t, http.DefaultClient, base+"/oauth/register", cursorRegistration())
+		body := readAll(t, res)
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("register %d: %d %s", i, res.StatusCode, body)
+		}
+		if got := res.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Fatalf("register CORS %q", got)
+		}
+		var created struct {
+			ClientID     string   `json:"client_id"`
+			RedirectURIs []string `json:"redirect_uris"`
+		}
+		if err := json.Unmarshal([]byte(body), &created); err != nil || created.ClientID == "" {
+			t.Fatalf("register body: %s", body)
+		}
+		if !sameURIs(created.RedirectURIs, cursorRegistration()["redirect_uris"].([]string)) {
+			t.Fatalf("registered redirect_uris %#v", created.RedirectURIs)
+		}
+		clientID = created.ClientID
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser := &http.Client{
+		Jar: jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	signup := postJSON(t, browser, base+"/api/signup", map[string]string{
+		"email":      "owner@example.com",
+		"password":   "a long passphrase",
+		"setupToken": "test-setup-token",
+	})
+	if signup.StatusCode != http.StatusOK {
+		t.Fatalf("signup: %d %s", signup.StatusCode, readAll(t, signup))
+	}
+	signup.Body.Close()
+	verifier, err := crypto.NewCodeVerifier()
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {clientID},
+		"redirect_uri":          {"cursor://anysphere.cursor-mcp/oauth/callback"},
+		"scope":                 {"publish"},
+		"state":                 {"st"},
+		"resource":              {base + "/mcp"},
+		"code_challenge":        {crypto.CodeChallenge(verifier)},
+		"code_challenge_method": {"S256"},
+	}
+	authRes, err := browser.Get(base + "/oauth/authorize?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	locHeader := authRes.Header.Get("Location")
+	authRes.Body.Close()
+	loc, err := url.Parse(locHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loc.Scheme != "cursor" || loc.Query().Get("code") == "" {
+		t.Fatalf("authorize with cursor:// : %d %s", authRes.StatusCode, locHeader)
+	}
+}
+
+func sameURIs(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}

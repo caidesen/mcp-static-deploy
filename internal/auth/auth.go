@@ -95,7 +95,11 @@ func Open(ctx context.Context, opt Options) (*App, error) {
 		AuthorizationServer: &theauth.AuthorizationServerConfig{
 			Issuer:                     issuer,
 			AllowAnonymousRegistration: true,
-			LoginURL:                   "/",
+			// The library default is one registration per minute per IP. A client
+			// that discovers the endpoint and then registers, or retries a 400,
+			// is rejected on the second call and reports that registration failed.
+			RegistrationRateLimitPerMinute: 30,
+			LoginURL:                       "/",
 			ClientCompat: theauth.ClientCompatConfig{
 				OptionalResource:  true,
 				LoopbackAnyPort:   true,

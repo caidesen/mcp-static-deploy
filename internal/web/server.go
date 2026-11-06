@@ -154,10 +154,12 @@ func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, err
 
 	// theauth mounts session routes under /auth/ and the authorization server
 	// at /.well-known and /oauth. Echo forwards those paths unchanged.
+	// Discovery and registration answers carry CORS so a browser client can
+	// read registration_endpoint and POST /oauth/register.
 	routes := echo.WrapHandler(app.Routes)
 	e.Any("/auth/*", routes)
-	e.Any("/oauth/*", routes)
-	e.Any("/.well-known/*", routes)
+	e.Any("/oauth/*", s.oauthRoute)
+	e.Any("/.well-known/*", s.discoveryRoute)
 
 	issuer := strings.TrimRight(cfg.BaseURL, "/")
 	tokens := mcpresource.New(issuer+"/mcp", mcpresource.WithJWKS(issuer+"/oauth/jwks"))
