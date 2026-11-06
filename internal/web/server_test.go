@@ -292,18 +292,27 @@ func TestEmptyBaseDomainDoesNotServeSites(t *testing.T) {
 
 func startServer(t *testing.T) (string, *Runtime) {
 	t.Helper()
+	return startServerCfg(t, Config{})
+}
+
+func startServerCfg(t *testing.T, cfg Config) (string, *Runtime) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	base := "http://" + ln.Addr().String()
-	dir := t.TempDir()
-	rt, err := Boot(context.Background(), Config{
-		BaseURL:    base,
-		BaseDomain: "localhost",
-		DataDir:    dir,
-		SetupToken: "test-setup-token",
-	})
+	cfg.BaseURL = base
+	if cfg.BaseDomain == "" {
+		cfg.BaseDomain = "localhost"
+	}
+	if cfg.DataDir == "" {
+		cfg.DataDir = t.TempDir()
+	}
+	if cfg.SetupToken == "" {
+		cfg.SetupToken = "test-setup-token"
+	}
+	rt, err := Boot(context.Background(), cfg)
 	if err != nil {
 		ln.Close()
 		t.Fatal(err)

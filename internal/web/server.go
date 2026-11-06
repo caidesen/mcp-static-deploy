@@ -34,6 +34,9 @@ type Config struct {
 	BaseDomain string
 	DataDir    string
 	SetupToken string
+	// CIMDHTTPClient overrides the client that fetches Client ID Metadata
+	// Documents. Production leaves it nil.
+	CIMDHTTPClient *http.Client
 }
 
 // Runtime is a booted server.
@@ -67,9 +70,10 @@ func Boot(ctx context.Context, cfg Config) (*Runtime, error) {
 		return nil, errors.New("baseUrl must be an absolute http or https URL")
 	}
 	app, err := auth.Open(ctx, auth.Options{
-		DataDir:    cfg.DataDir,
-		BaseURL:    cfg.BaseURL,
-		SetupToken: cfg.SetupToken,
+		DataDir:        cfg.DataDir,
+		BaseURL:        cfg.BaseURL,
+		SetupToken:     cfg.SetupToken,
+		CIMDHTTPClient: cfg.CIMDHTTPClient,
 	})
 	if err != nil {
 		return nil, err

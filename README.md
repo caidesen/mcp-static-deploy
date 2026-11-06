@@ -91,7 +91,9 @@ Replacing a file uploads the same path again. Delete removes that file only. The
 
 This process is the authorization server. Clients discover it from `GET /.well-known/oauth-protected-resource/mcp`, which points at `GET /.well-known/oauth-authorization-server`.
 
-Registration is open. An MCP client registers itself with `POST /oauth/register` (one redirect URI, a public client, PKCE S256). There is no registration token to create. The person signs in with email and password when the browser is sent to `/`, then the client finishes the authorization-code exchange at `POST /oauth/token`. Request the `publish` scope. Loopback `http://127.0.0.1` redirect URIs are accepted, including a changing port.
+Clients that publish a Client ID Metadata Document (an HTTPS URL used as `client_id`, such as Cursor) are accepted. The authorization-server metadata advertises `client_id_metadata_document_supported`. A document may list several redirect URIs, including `cursor://` and `http://localhost`. The person signs in with email and password when the browser is sent to `/`, then the client finishes the authorization-code exchange at `POST /oauth/token`. Request the `publish` scope. Extra scopes such as `offline_access` are ignored.
+
+Dynamic registration is still open for a client that has no metadata document: `POST /oauth/register`, one redirect URI, a public client, PKCE S256. There is no registration token to create. Loopback `http://127.0.0.1` redirect URIs are accepted, including a changing port.
 
 Mounted OAuth routes:
 

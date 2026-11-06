@@ -34,6 +34,9 @@ type Options struct {
 	DataDir    string
 	BaseURL    string
 	SetupToken string
+	// CIMDHTTPClient, when set, fetches Client ID Metadata Documents.
+	// Nil uses theauth's SSRF-guarded client. Tests point it at a local document.
+	CIMDHTTPClient *http.Client
 }
 
 // Open migrates theauth's SQLite schema and mounts its routes on a chi router.
@@ -94,9 +97,20 @@ func Open(ctx context.Context, opt Options) (*App, error) {
 			AllowAnonymousRegistration: true,
 			LoginURL:                   "/",
 			ClientCompat: theauth.ClientCompatConfig{
-				OptionalResource: true,
-				LoopbackAnyPort:  true,
-				PathAudience:     true,
+				OptionalResource:  true,
+				LoopbackAnyPort:   true,
+				PathAudience:      true,
+				DropUnknownScopes: true,
+			},
+			// Clients such as Cursor identify themselves with an HTTPS metadata
+			// document and several redirect URIs, including cursor://. Anonymous
+			// dynamic registration accepts only one loopback URI, so that add
+			// path never gets a client_id. The default fetcher refuses non-public
+			// addresses. CIMDHTTPClient is nil outside tests.
+			CIMD: &theauth.CIMDConfig{
+				TrustPolicy:            theauth.AllowAnyHTTPS(),
+				AllowedRedirectSchemes: []string{"cursor"},
+				HTTPClient:             opt.CIMDHTTPClient,
 			},
 			Resources: []theauth.ProtectedResource{{
 				Identifier: issuer + "/mcp",
