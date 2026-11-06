@@ -6,16 +6,17 @@
 #   docker build -t mcp-static-deploy .
 #   docker run --rm -p 8080:8080 -e BASE_DOMAIN=localhost -v mcp-static-data:/data mcp-static-deploy
 #
-# Runtime environment (override with docker run -e):
-#   ADDR         listen address                         default :8080
-#   BASE_URL     apex URL; http leaves cookies non-Secure  default http://localhost:8080
-#   BASE_DOMAIN  required; sites are {slug}.{BASE_DOMAIN}. No default.
-#                The process refuses to start if this is empty.
-#                localhost in the example above is only a local-test host.
-#   DATA_DIR     SQLite file and sites/{slug}/          default /data
-#   SETUP_TOKEN  first-account bootstrap secret         unset: the process generates one and logs it once
+# Runtime environment:
+#   DATA_DIR      config.json, SQLite, sites/{slug}/, oauth-encryption.key   default /data
+#   BASE_DOMAIN   public sites are {slug}.$BASE_DOMAIN. Read on every start.
+#                 Empty still starts and does not serve public sites. No default.
 #
-# Wildcard DNS for *.BASE_DOMAIN is not configured by this image.
+# ADDR, BASE_URL, and SETUP_TOKEN are not read from the environment.
+# First boot writes DATA_DIR/config.json (mode 0600): random setupToken, addr ":8080",
+# and an empty baseUrl. Later boots read that file. Edit baseUrl, then restart.
+# oauth-encryption.key stays its own file.
+#
+# Wildcard DNS for *.$BASE_DOMAIN is not configured by this image.
 
 FROM node:22-bookworm AS ui
 
@@ -46,9 +47,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/mcp-static-deploy /mcp-static-deploy
 COPY --from=build --chown=nonroot:nonroot /out/data /data
 
-ENV ADDR=":8080" \
-    BASE_URL="http://localhost:8080" \
-    DATA_DIR="/data"
+ENV DATA_DIR="/data"
 
 WORKDIR /data
 VOLUME ["/data"]

@@ -55,11 +55,16 @@ func (r *Runtime) Close() {
 func Boot(ctx context.Context, cfg Config) (*Runtime, error) {
 	cfg.BaseDomain = sites.NormalizeDomain(cfg.BaseDomain)
 	if cfg.BaseDomain == "" {
-		return nil, errors.New("BASE_DOMAIN is empty")
+		slog.Warn("BASE_DOMAIN is empty; public sites are not served until it is set")
+	}
+	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = "http://127.0.0.1:8080"
+		slog.Warn("baseUrl is empty; using a loopback stand-in until config.json sets baseUrl", "baseUrl", cfg.BaseURL)
 	}
 	u, err := url.Parse(cfg.BaseURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, errors.New("BASE_URL must be an absolute http or https URL")
+		return nil, errors.New("baseUrl must be an absolute http or https URL")
 	}
 	app, err := auth.Open(ctx, auth.Options{
 		DataDir:    cfg.DataDir,
@@ -152,7 +157,7 @@ func newServer(cfg Config, app *auth.App, store *sites.Store) (http.Handler, err
 
 	issuer := strings.TrimRight(cfg.BaseURL, "/")
 	tokens := mcpresource.New(issuer+"/mcp", mcpresource.WithJWKS(issuer+"/oauth/jwks"))
-	localDomain := cfg.BaseDomain == "localhost" || strings.HasSuffix(cfg.BaseDomain, ".localhost")
+	localDomain := cfg.BaseDomain == "" || cfg.BaseDomain == "localhost" || strings.HasSuffix(cfg.BaseDomain, ".localhost")
 	mcpHandler := mcp.Handler(store, cfg.BaseURL, cfg.BaseDomain, !localDomain, tokens)
 	e.Any("/mcp", echo.WrapHandler(tokens.Middleware(mcpHandler)))
 

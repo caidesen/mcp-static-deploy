@@ -70,6 +70,11 @@ func Open(ctx context.Context, opt Options) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	token := strings.TrimSpace(opt.SetupToken)
+	if token == "" {
+		_ = db.Close()
+		return nil, errors.New("setup token is empty")
+	}
 	issuer := strings.TrimRight(opt.BaseURL, "/")
 	a, err := theauth.New(theauth.Config{
 		CoreStorage: store,
@@ -82,7 +87,7 @@ func Open(ctx context.Context, opt Options) (*App, error) {
 		SuppressTrustedProxiesWarning: true,
 		EncryptionKey:                 key,
 		Bootstrap: &theauth.BootstrapConfig{
-			SetupToken: opt.SetupToken,
+			SetupToken: token,
 		},
 		AuthorizationServer: &theauth.AuthorizationServerConfig{
 			Issuer:                     issuer,
