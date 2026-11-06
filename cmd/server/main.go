@@ -30,7 +30,6 @@ func run() error {
 		BaseURL:    env("BASE_URL", "http://localhost:8080"),
 		BaseDomain: baseDomain,
 		DataDir:    env("DATA_DIR", "data"),
-		SetupToken: os.Getenv("SETUP_TOKEN"),
 	}
 	addr := env("ADDR", ":8080")
 	ctx := context.Background()

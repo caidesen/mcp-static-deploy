@@ -12,8 +12,9 @@
 #   BASE_DOMAIN  required; sites are {slug}.{BASE_DOMAIN}. No default.
 #                The process refuses to start if this is empty.
 #                localhost in the example above is only a local-test host.
-#   DATA_DIR     SQLite file and sites/{slug}/          default /data
-#   SETUP_TOKEN  first-account bootstrap secret         unset: the process generates one and logs it once
+#   DATA_DIR     SQLite file, sites/{slug}/, setup-token   default /data
+#                First boot writes setup-token (mode 0600) and logs the token once.
+#                Later boots read that file. SETUP_TOKEN is not read from the environment.
 #
 # Wildcard DNS for *.BASE_DOMAIN is not configured by this image.
 

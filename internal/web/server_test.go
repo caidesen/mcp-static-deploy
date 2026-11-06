@@ -82,6 +82,16 @@ func TestPublishFlow(t *testing.T) {
 	}
 	res.Body.Close()
 
+	closed := postJSON(t, client, base+"/api/signup", map[string]string{
+		"email":      "second@example.com",
+		"password":   "another long passphrase",
+		"setupToken": "test-setup-token",
+	})
+	closedBody := readAll(t, closed)
+	if closed.StatusCode == http.StatusOK || !strings.Contains(closedBody, "err_signup_closed") {
+		t.Fatalf("signup after first user: %d %s", closed.StatusCode, closedBody)
+	}
+
 	res, err = client.Get(base + "/api/session")
 	if err != nil {
 		t.Fatal(err)
@@ -268,11 +278,15 @@ func startServer(t *testing.T) (string, *Runtime) {
 		t.Fatal(err)
 	}
 	base := "http://" + ln.Addr().String()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "setup-token"), []byte("test-setup-token\n"), 0o600); err != nil {
+		ln.Close()
+		t.Fatal(err)
+	}
 	rt, err := Boot(context.Background(), Config{
 		BaseURL:    base,
 		BaseDomain: "localhost",
-		DataDir:    t.TempDir(),
-		SetupToken: "test-setup-token",
+		DataDir:    dir,
 	})
 	if err != nil {
 		ln.Close()

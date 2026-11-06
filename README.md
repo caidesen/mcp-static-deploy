@@ -26,7 +26,6 @@ ADDR=:8080 \
 BASE_URL=http://localhost:8080 \
 BASE_DOMAIN=localhost \
 DATA_DIR=./data \
-SETUP_TOKEN=dev-setup-token \
 ./server
 ```
 
@@ -35,8 +34,7 @@ SETUP_TOKEN=dev-setup-token \
 | `ADDR` | `:8080` | Listen address |
 | `BASE_URL` | `http://localhost:8080` | Apex URL. `http` leaves the session cookie non-Secure. |
 | `BASE_DOMAIN` | none | Required. Public sites are served on `{slug}.{BASE_DOMAIN}`. The process refuses to start if this is empty. |
-| `DATA_DIR` | `data` | SQLite file `app.db` and site files `sites/{slug}/` |
-| `SETUP_TOKEN` | generated and logged once if unset | Required to create the first account |
+| `DATA_DIR` | `data` | SQLite file `app.db`, site files `sites/{slug}/`, and the setup token `setup-token` |
 
 ## Container image
 
@@ -51,7 +49,6 @@ docker build -t mcp-static-deploy .
 docker run --rm -p 8080:8080 \
   -e BASE_URL=http://localhost:8080 \
   -e BASE_DOMAIN=localhost \
-  -e SETUP_TOKEN=dev-setup-token \
   -v mcp-static-data:/data \
   mcp-static-deploy
 ```
@@ -63,20 +60,21 @@ Pull the published image with `docker pull ghcr.io/caidesen/mcp-static-deploy:la
 | `ADDR` | `:8080` | Listen address. The image exposes port 8080. |
 | `BASE_URL` | `http://localhost:8080` | Apex URL. `http` leaves the session cookie non-Secure. |
 | `BASE_DOMAIN` | none | Required. The image does not set this. Public sites are served on `{slug}.{BASE_DOMAIN}`. The process refuses to start if it is empty. |
-| `DATA_DIR` | `/data` | SQLite file `app.db` and site files `sites/{slug}/`. Mount a volume here. This replaces the binary's relative default `data`. |
-| `SETUP_TOKEN` | unset | If unset, the process generates a setup token and logs it once. |
+| `DATA_DIR` | `/data` | SQLite file `app.db`, site files `sites/{slug}/`, and `setup-token`. Mount a volume here. This replaces the binary's relative default `data`. |
 
 A Docker named volume is created writable by uid 65532. A bind-mounted host directory must already be writable by that user.
 
 This image does not configure DNS or TLS. The wildcard DNS assumption stays outside this change: point `*.BASE_DOMAIN` at the process yourself.
 
-Open `BASE_URL`. While no account exists, the page asks for email, a password of at least 12 characters, and the setup token. That calls `POST /auth/email-password/signup` with `X-Setup-Token`. After the first account exists, signup is closed and the same page is email/password sign-in.
+On first boot, if `DATA_DIR/setup-token` does not exist, the process generates a random token, writes it with mode 0600, and logs it once. Later boots read that file and do not log it again. `SETUP_TOKEN` is not read from the environment. Keep the file with the database. The logged value is what you use to create the first account.
+
+Open `BASE_URL`. While no account exists, the page asks for email, a password of at least 12 characters, and that setup token. That calls `POST /auth/email-password/signup` with `X-Setup-Token`. After the first account exists, signup stays closed and the same page is email/password sign-in.
 
 The same routes are also mounted directly, matching the theauth Echo example (chi subrouter, then `echo.WrapHandler`, paths under `/auth/`):
 
 ```sh
 curl -c jar -X POST "$BASE_URL/auth/email-password/signup" \
-  -H "X-Setup-Token: $SETUP_TOKEN" -H 'Content-Type: application/json' \
+  -H "X-Setup-Token: $(cat "$DATA_DIR/setup-token")" -H 'Content-Type: application/json' \
   -d '{"email":"admin@example.com","password":"a long passphrase here"}'
 ```
 

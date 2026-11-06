@@ -33,7 +33,6 @@ type Config struct {
 	BaseURL    string
 	BaseDomain string
 	DataDir    string
-	SetupToken string
 }
 
 // Runtime is a booted server.
@@ -62,9 +61,8 @@ func Boot(ctx context.Context, cfg Config) (*Runtime, error) {
 		return nil, errors.New("BASE_URL must be an absolute http or https URL")
 	}
 	app, err := auth.Open(ctx, auth.Options{
-		DataDir:    cfg.DataDir,
-		BaseURL:    cfg.BaseURL,
-		SetupToken: cfg.SetupToken,
+		DataDir: cfg.DataDir,
+		BaseURL: cfg.BaseURL,
 	})
 	if err != nil {
 		return nil, err
